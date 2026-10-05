@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <title>NNLL Minor AAA Dugout & Lineup Optimizer</title>
+  <meta name="description" content="Offline-first dugout management and defensive rotation optimizer for North Natomas Little League Minor AAA baseball with Firebase Authentication.">
+  <meta name="theme-color" content="#0f172a">
+
+  <!-- Google Fonts: Inter & Outfit -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" crossorigin="anonymous">
+
+  <link rel="stylesheet" href="css/styles.css?v=mobile-resp-3.8">
+
+  <!-- Firebase Modular SDK Import Map for native browser ES modules -->
+  <script type="importmap">
+    {
+      "imports": {
+        "firebase/app": "https://www.gstatic.com/firebasejs/10.12.2/firebase-app.js",
+        "firebase/auth": "https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js",
+        "firebase/analytics": "https://www.gstatic.com/firebasejs/10.12.2/firebase-analytics.js",
+        "firebase/firestore": "https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js"
+      }
+    }
+  </script>
+</head>
+<body>
+  <!-- Full-screen Authentication Portal Container -->
+  <div id="auth-root"></div>
+
+  <!-- Main Dugout Optimizer Application Root (Gated behind authentication) -->
+  <div id="app-root" style="display: none;">
+    <div style="padding: 40px; text-align: center; color: #94a3b8; font-family: sans-serif;">
+      <h2>⚾ Loading NNLL Dugout Optimizer...</h2>
+    </div>
+  </div>
+
+  <!-- Modal Portal Root -->
+  <div id="modal-container"></div>
+
+  <script type="module" src="src/app.js?v=mobile-resp-3.8"></script>
+</body>
+</html>

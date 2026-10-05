@@ -1,0 +1,13 @@
+{
+  "name": "nnll-dugout-admin",
+  "version": "1.0.0",
+  "description": "NNLL Minor AAA Dugout & Lineup Optimizer with Firebase Authentication",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 8000",
+    "test": "python3 tests/test_rules_and_solver.py"
+  },
+  "dependencies": {
+    "firebase": "^12.19.0"
+  }
+}
