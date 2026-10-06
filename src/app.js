@@ -2,8 +2,8 @@
  * Main Application Bootstrapper with Firebase Authentication Guard
  */
 
-import { GameStateManager } from './state.js';
-import { DugoutUI } from './ui.js';
+import { GameStateManager } from './state.js?v=cbo-dual-3.9';
+import { DugoutUI } from './ui.js?v=cbo-dual-3.9';
 import { SAMPLE_TEAMS } from './sample-data.js';
 import { loadLatestActiveGame } from './storage.js';
 import { authService } from './auth.js';

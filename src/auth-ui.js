@@ -86,10 +86,10 @@ export class AuthUI {
           <!-- Card Header & Branding -->
           <div class="auth-header">
             <div class="auth-badge">NNLL MINOR AAA BASEBALL</div>
-            <div class="auth-icon-wrap">
-              <span class="auth-baseball-icon">⚾</span>
+            <div class="auth-logo-wrap">
+              <img src="icon.jpeg" alt="dugout-admin Logo" class="auth-logo-img" width="84" height="84" />
             </div>
-            <h2 class="auth-title">Dugout Admin Portal</h2>
+            <h2 class="auth-title">dugout-admin</h2>
             <p class="auth-subtitle">Coaches & Managers Defensive Rotation Optimizer</p>
           </div>
 

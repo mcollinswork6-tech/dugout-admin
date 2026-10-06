@@ -12,6 +12,45 @@ import {
 } from './constants.js';
 import { TeamManagerUI } from './team-manager-ui.js';
 import { teamStorage } from './team-storage.js';
+import { SAMPLE_TEAMS } from './sample-data.js';
+
+export function getBattingContextFromState(state) {
+  if (!state) return { isHome: true, isTop: true, isMyTeamBatting: false, isOpponentBatting: true, battingTeamName: 'Opponents', fieldingTeamName: 'Black Bats' };
+  const isHome = state.isHomeTeam !== false;
+  const isTop = state.currentHalf === 'TOP';
+  const isMyTeamBatting = isHome ? !isTop : isTop;
+  const battingTeamName = isMyTeamBatting ? (state.teamName || 'Black Bats') : (state.opponentName || 'Opponents');
+  const fieldingTeamName = isMyTeamBatting ? (state.opponentName || 'Opponents') : (state.teamName || 'Black Bats');
+
+  return {
+    isHome,
+    isTop,
+    isMyTeamBatting,
+    isOpponentBatting: !isMyTeamBatting,
+    battingTeamName,
+    fieldingTeamName,
+  };
+}
+
+export function getFallbackOpponentRoster(state) {
+  if (state?.opponentPlayers && state.opponentPlayers.length > 0) {
+    return state.opponentPlayers;
+  }
+  const oppName = (state?.opponentName || '').toLowerCase().trim();
+  const matched = SAMPLE_TEAMS.find((t) => {
+    const tLower = t.teamName.toLowerCase();
+    return tLower.includes(oppName) || oppName.includes(tLower.split(' ')[0]);
+  });
+  if (matched && matched.players && matched.players.length > 0) {
+    return JSON.parse(JSON.stringify(matched.players));
+  }
+  return Array.from({ length: 9 }, (_, i) => ({
+    id: `opp_p_${i + 1}`,
+    name: `Opponent Batter ${i + 1}`,
+    jerseyNumber: i + 1,
+    eligiblePositions: { canPitch: true, canCatch: true, canPlayFirstBase: true },
+  }));
+}
 
 export class DugoutUI {
   constructor(stateManager, authService = null) {
@@ -63,11 +102,18 @@ export class DugoutUI {
 
       <!-- App Header -->
       <header class="app-header">
-        <div class="brand-section">
-          <div class="brand-title-wrap">
-            <span class="brand-badge">NNLL MINOR AAA</span>
-            <h1 class="brand-title">⚾ Dugout Optimizer</h1>
+        <div class="header-top-row">
+          <div class="brand-identity">
+            <img src="icon.jpeg" alt="dugout-admin Logo" class="brand-logo" width="40" height="40" />
+            <div class="brand-title-wrap">
+              <span class="brand-badge">NNLL MINOR AAA</span>
+              <h1 class="brand-title">dugout-admin</h1>
+            </div>
           </div>
+          ${this.renderCoachProfile()}
+        </div>
+
+        <div class="header-nav-row">
           <div class="game-meta-pills">
             <span class="meta-pill" id="header-team-pill" style="cursor: pointer;" title="Click to manage team roster and stats">⚾ ${state.teamName} ▾</span>
             ${isSuper ? `
@@ -84,41 +130,40 @@ export class DugoutUI {
             <span style="color: #64748b;">•</span>
             <span class="meta-pill">${state.isHomeTeam ? 'HOME' : 'AWAY'}</span>
           </div>
-        </div>
 
-        <!-- Primary View Mode Switcher: Planning Layout (Dashboard) vs Game Layout -->
-        <div class="view-mode-toggle-group" role="tablist" aria-label="Application View Mode">
-          <button id="toggle-mode-planning" class="view-mode-btn ${this.appViewMode === 'planning' ? 'active' : ''}" role="tab" aria-selected="${this.appViewMode === 'planning'}" title="Pre-game planning dashboard and 6-inning defensive rotation matrix">
-            <span class="mode-icon">📋</span>
-            <span class="mode-label">Planning</span>
-          </button>
-          <button id="toggle-mode-game" class="view-mode-btn ${this.appViewMode === 'game' ? 'active' : ''}" role="tab" aria-selected="${this.appViewMode === 'game'}" title="Live game layout: Line-Up & Game Tracker">
-            <span class="mode-icon">⚾</span>
-            <span class="mode-label">Game Layout</span>
-          </button>
-        </div>
-
-        <div class="header-actions">
-          ${isOpponentView ? `
-            <button class="btn btn-secondary btn-sm disabled-label" disabled style="opacity: 0.9; border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; cursor: not-allowed;" title="You have View Only access to other teams. Edits and saves are disabled.">
-              🔒 Save: View Only
+          <!-- Primary View Mode Switcher: Planning Layout (Dashboard) vs Game Layout -->
+          <div class="view-mode-toggle-group" role="tablist" aria-label="Application View Mode">
+            <button id="toggle-mode-planning" class="view-mode-btn ${this.appViewMode === 'planning' ? 'active' : ''}" role="tab" aria-selected="${this.appViewMode === 'planning'}" title="Pre-game planning dashboard and 6-inning defensive rotation matrix">
+              <span class="mode-icon">📋</span>
+              <span class="mode-label">Planning</span>
             </button>
-          ` : ''}
-          <button id="btn-undo" class="btn btn-secondary btn-sm" ${!canUndo || isOpponentView ? 'disabled' : ''} title="Undo">↩ Undo</button>
-          <button id="btn-redo" class="btn btn-secondary btn-sm" ${!canRedo || isOpponentView ? 'disabled' : ''} title="Redo">↪ Redo</button>
-          ${isSuper ? `
-            <button id="btn-header-invites" class="btn btn-secondary btn-sm" style="border-color: rgba(168, 85, 247, 0.5); color: #e9d5ff;" title="Invite coaches, managers, and scorekeepers">✉️ User Invites</button>
-          ` : ''}
-          ${this.appViewMode === 'planning' ? `
-            <button id="btn-lineup-modal" class="btn btn-secondary btn-sm" title="${isOpponentView ? 'View opponent lineup and roster' : 'Reorder batting lineup & set attendance'}">📋 ${isOpponentView ? 'Opponent Lineup' : 'Lineup & Attendance'}</button>
-            <button id="btn-teams-manager" class="btn btn-secondary btn-sm" title="Manage teams, rosters, and cumulative season stats">👥 Teams & Stats</button>
-            <button id="btn-new-game" class="btn btn-secondary btn-sm">⚙ New Game</button>
-            <button id="btn-print-card" class="btn btn-primary btn-sm">🖨 Printable Lineup Card</button>
-          ` : `
-            <button id="btn-teams-manager" class="btn btn-secondary btn-sm" title="Manage teams, rosters, and cumulative season stats">👥 Teams & Stats</button>
-            <button id="btn-new-game" class="btn btn-secondary btn-sm">⚙ New Game</button>
-          `}
-          ${this.renderCoachProfile()}
+            <button id="toggle-mode-game" class="view-mode-btn ${this.appViewMode === 'game' ? 'active' : ''}" role="tab" aria-selected="${this.appViewMode === 'game'}" title="Live game layout: Line-Up & Game Tracker">
+              <span class="mode-icon">⚾</span>
+              <span class="mode-label">Game Layout</span>
+            </button>
+          </div>
+
+          <div class="header-actions">
+            ${isOpponentView ? `
+              <button class="btn btn-secondary btn-sm disabled-label" disabled style="opacity: 0.9; border-color: rgba(239, 68, 68, 0.4); color: #fca5a5; cursor: not-allowed;" title="You have View Only access to other teams. Edits and saves are disabled.">
+                🔒 Save: View Only
+              </button>
+            ` : ''}
+            <button id="btn-undo" class="btn btn-secondary btn-sm" ${!canUndo || isOpponentView ? 'disabled' : ''} title="Undo">↩ Undo</button>
+            <button id="btn-redo" class="btn btn-secondary btn-sm" ${!canRedo || isOpponentView ? 'disabled' : ''} title="Redo">↪ Redo</button>
+            ${isSuper ? `
+              <button id="btn-header-invites" class="btn btn-secondary btn-sm" style="border-color: rgba(168, 85, 247, 0.5); color: #e9d5ff;" title="Invite coaches, managers, and scorekeepers">✉️ User Invites</button>
+            ` : ''}
+            ${this.appViewMode === 'planning' ? `
+              <button id="btn-lineup-modal" class="btn btn-secondary btn-sm" title="${isOpponentView ? 'View opponent lineup and roster' : 'Reorder batting lineup & set attendance'}">📋 ${isOpponentView ? 'Opponent Lineup' : 'Lineup & Attendance'}</button>
+              <button id="btn-teams-manager" class="btn btn-secondary btn-sm" title="Manage teams, rosters, and cumulative season stats">👥 Teams & Stats</button>
+              <button id="btn-new-game" class="btn btn-secondary btn-sm">⚙ New Game</button>
+              <button id="btn-print-card" class="btn btn-primary btn-sm">🖨 Printable Lineup Card</button>
+            ` : `
+              <button id="btn-teams-manager" class="btn btn-secondary btn-sm" title="Manage teams, rosters, and cumulative season stats">👥 Teams & Stats</button>
+              <button id="btn-new-game" class="btn btn-secondary btn-sm">⚙ New Game</button>
+            `}
+          </div>
         </div>
       </header>
 
@@ -172,8 +217,13 @@ export class DugoutUI {
         <!-- Main Dugout Matrix Grid -->
         <div class="matrix-container mobile-section-defense">
           <div class="print-lineup-header">
-            <h2>NNLL Minor AAA Lineup & Defensive Rotation</h2>
-            <p><strong>Team:</strong> ${state.teamName} | <strong>Opponent:</strong> ${state.opponentName} | <strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+            <div class="print-brand-wrap">
+              <img src="icon.jpeg" alt="dugout-admin Logo" class="print-logo" width="48" height="48" />
+              <div>
+                <h2>dugout-admin — NNLL Minor AAA Lineup & Defensive Rotation</h2>
+                <p><strong>Team:</strong> ${state.teamName} | <strong>Opponent:</strong> ${state.opponentName} | <strong>Date:</strong> ${new Date().toLocaleDateString()}</p>
+              </div>
+            </div>
           </div>
           <table class="matrix-table">
             <thead>
@@ -299,6 +349,15 @@ export class DugoutUI {
         if (pId === playerId) return pos;
       }
       return 'BENCH';
+    };
+
+    const formatFieldPlayerName = (playerId) => {
+      if (!playerId) return 'Empty';
+      const player = state.players.find((p) => p.id === playerId);
+      if (!player) return 'Empty';
+      const firstName = (player.name || '').trim().split(/\s+/)[0] || 'Player';
+      const hasNum = player.jerseyNumber !== undefined && player.jerseyNumber !== null && player.jerseyNumber !== '';
+      return hasNum ? `${firstName} #${player.jerseyNumber}` : firstName;
     };
 
     return `
@@ -449,21 +508,65 @@ export class DugoutUI {
 
             <!-- Field Diamond Visualizer -->
             <div class="field-visual-container">
+              <!-- Authentic Baseball Diamond SVG Background -->
+              <div class="baseball-diamond-bg" aria-hidden="true">
+                <svg viewBox="0 0 400 360" preserveAspectRatio="none" xmlns="http://www.w3.org/2000/svg">
+                  <!-- Subtle Outfield Grass Base -->
+                  <rect width="400" height="360" fill="#143e26" />
+
+                  <!-- Outfield Mowed Lawn Arc Stripes -->
+                  <path d="M 0,0 L 400,0 L 400,240 C 300,290 100,290 0,240 Z" fill="#184a2e" opacity="0.6" />
+                  <path d="M 50,0 L 350,0 L 350,220 C 270,265 130,265 50,220 Z" fill="#1e5837" opacity="0.5" />
+                  <path d="M 100,0 L 300,0 L 300,200 C 240,240 160,240 100,200 Z" fill="#246841" opacity="0.4" />
+
+                  <!-- Outfield Warning Track Arc -->
+                  <path d="M 8,70 Q 200,-25 392,70" fill="none" stroke="#d8b175" stroke-width="6" stroke-opacity="0.35" stroke-dasharray="8,5" />
+
+                  <!-- Foul Lines extending from Home Plate to Outfield Fence -->
+                  <line x1="200" y1="312" x2="8" y2="70" stroke="#ffffff" stroke-width="2" stroke-opacity="0.55" />
+                  <line x1="200" y1="312" x2="392" y2="70" stroke="#ffffff" stroke-width="2" stroke-opacity="0.55" />
+
+                  <!-- Infield Dirt Cutout Arc / Clay Diamond -->
+                  <path d="M 200,80 C 110,80 50,145 50,205 L 175,326 C 190,340 210,340 225,326 L 350,205 C 350,145 290,80 200,80 Z"
+                    fill="#d8b175" fill-opacity="0.25" stroke="#d8b175" stroke-width="1.5" stroke-opacity="0.5" />
+
+                  <!-- Infield Turf Grass Diamond -->
+                  <polygon points="200,126 295,205 200,284 105,205" fill="#166534" fill-opacity="0.5" stroke="#15803d" stroke-width="1" stroke-opacity="0.4" />
+
+                  <!-- Running Baselines (Chalk Paths connecting Home -> 1B -> 2B -> 3B -> Home) -->
+                  <polygon points="200,312 310,205 200,110 90,205" fill="none" stroke="#ffffff" stroke-width="2.5" stroke-opacity="0.65" stroke-linejoin="round" />
+
+                  <!-- Pitcher's Mound Circle & Rubber -->
+                  <circle cx="200" cy="205" r="22" fill="#d8b175" fill-opacity="0.4" stroke="#d8b175" stroke-width="1.5" stroke-opacity="0.6" />
+                  <rect x="194" y="203" width="12" height="4" rx="1" fill="#ffffff" opacity="0.9" />
+
+                  <!-- Home Plate Dirt Circle -->
+                  <circle cx="200" cy="312" r="20" fill="#d8b175" fill-opacity="0.4" stroke="#d8b175" stroke-width="1.5" stroke-opacity="0.6" />
+                  <!-- Home Plate Pentagon -->
+                  <polygon points="200,320 193,313 193,306 207,306 207,313" fill="#ffffff" opacity="0.95" />
+
+                  <!-- Bases (1st, 2nd, 3rd) White Diamond Bags -->
+                  <rect x="303" y="198" width="14" height="14" rx="1.5" transform="rotate(45 310 205)" fill="#ffffff" opacity="0.95" stroke="#94a3b8" stroke-width="0.75" />
+                  <rect x="193" y="103" width="14" height="14" rx="1.5" transform="rotate(45 200 110)" fill="#ffffff" opacity="0.95" stroke="#94a3b8" stroke-width="0.75" />
+                  <rect x="83" y="198" width="14" height="14" rx="1.5" transform="rotate(45 90 205)" fill="#ffffff" opacity="0.95" stroke="#94a3b8" stroke-width="0.75" />
+                </svg>
+              </div>
+
               <div class="field-arc-outfield">
                 <div class="field-pos-box box-lf ${assignments.LF ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === 'LF' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="LF" data-player-id="${assignments.LF || ''}">
                   <span class="pos-tag">LF</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments.LF)?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments.LF)}</span>
                 </div>
                 <div class="field-pos-box box-cf ${assignments.CF ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === 'CF' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="CF" data-player-id="${assignments.CF || ''}">
                   <span class="pos-tag">CF</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments.CF)?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments.CF)}</span>
                 </div>
                 <div class="field-pos-box box-rf ${assignments.RF ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === 'RF' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="RF" data-player-id="${assignments.RF || ''}">
                   <span class="pos-tag">RF</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments.RF)?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments.RF)}</span>
                 </div>
               </div>
 
@@ -471,32 +574,32 @@ export class DugoutUI {
                 <div class="field-pos-box box-3b ${assignments['3B'] ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === '3B' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="3B" data-player-id="${assignments['3B'] || ''}">
                   <span class="pos-tag">3B</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments['3B'])?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments['3B'])}</span>
                 </div>
                 <div class="field-pos-box box-ss ${assignments.SS ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === 'SS' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="SS" data-player-id="${assignments.SS || ''}">
                   <span class="pos-tag">SS</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments.SS)?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments.SS)}</span>
                 </div>
                 <div class="field-pos-box box-2b ${assignments['2B'] ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === '2B' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="2B" data-player-id="${assignments['2B'] || ''}">
                   <span class="pos-tag">2B</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments['2B'])?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments['2B'])}</span>
                 </div>
                 <div class="field-pos-box box-1b ${assignments['1B'] ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === '1B' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="1B" data-player-id="${assignments['1B'] || ''}">
                   <span class="pos-tag">1B</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments['1B'])?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments['1B'])}</span>
                 </div>
                 <div class="field-pos-box box-p ${assignments.P ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === 'P' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="P" data-player-id="${assignments.P || ''}">
                   <span class="pos-tag">P</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments.P)?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments.P)}</span>
                 </div>
                 <div class="field-pos-box box-c ${assignments.C ? 'occupied' : 'empty'} ${this.selectedSwapCell?.position === 'C' && this.selectedSwapCell?.inningNum === selInning ? 'selected-swap' : ''}"
                   data-inning="${selInning}" data-position="C" data-player-id="${assignments.C || ''}">
                   <span class="pos-tag">C</span>
-                  <span class="pos-player">${state.players.find(p => p.id === assignments.C)?.name || 'Empty'}</span>
+                  <span class="pos-player">${formatFieldPlayerName(assignments.C)}</span>
                 </div>
               </div>
             </div>
@@ -507,13 +610,12 @@ export class DugoutUI {
               <div class="bench-chips-wrap">
                 ${benchIds.length === 0 ? '<span class="bench-empty-text">No players on bench this inning</span>' : ''}
                 ${benchIds.map((bId) => {
-                  const bp = state.players.find((p) => p.id === bId);
                   const isSelected = this.selectedSwapCell?.playerId === bId && this.selectedSwapCell?.inningNum === selInning;
                   return `
                     <div class="field-pos-box box-bench ${isSelected ? 'selected-swap' : ''}"
                       data-inning="${selInning}" data-position="BENCH" data-player-id="${bId}">
                       <span class="pos-tag">BENCH</span>
-                      <span class="pos-player">#${bp ? bp.jerseyNumber : '--'} ${bp ? bp.name : 'Unknown'}</span>
+                      <span class="pos-player">${formatFieldPlayerName(bId)}</span>
                     </div>
                   `;
                 }).join('')}
@@ -566,15 +668,64 @@ export class DugoutUI {
     const balls = state.currentBalls || 0;
     const strikes = state.currentStrikes || 0;
 
-    // Batting Carousel / Due Up
-    const bOrder = state.battingOrder || [];
-    const bIndex = state.currentBatterIndex || 0;
-    const atBatPlayer = bOrder.length > 0 ? state.players.find((p) => p.id === bOrder[bIndex % bOrder.length]) : null;
-    const onDeckPlayer = bOrder.length > 1 ? state.players.find((p) => p.id === bOrder[(bIndex + 1) % bOrder.length]) : null;
-    const inHolePlayer = bOrder.length > 2 ? state.players.find((p) => p.id === bOrder[(bIndex + 2) % bOrder.length]) : null;
+    // Batting Context: Determine which team is batting and which is fielding
+    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
+      ? this.stateManager.getBattingContext()
+      : getBattingContextFromState(state);
+    const { isMyTeamBatting, isOpponentBatting, battingTeamName, fieldingTeamName } = battingContext;
 
-    // Courtesy Runner recommendation
-    const courtesy = this.stateManager.getCourtesyRunnerRecommendation();
+    // Batting Carousel / Due Up (Active batting team)
+    let activeOrder = [];
+    let activeIndex = 0;
+    let activePlayerList = [];
+
+    if (isMyTeamBatting) {
+      activeOrder = state.battingOrder || [];
+      activeIndex = state.currentBatterIndex || 0;
+      activePlayerList = state.players || [];
+    } else {
+      activePlayerList = (typeof this.stateManager?.getOpponentPlayers === 'function')
+        ? this.stateManager.getOpponentPlayers()
+        : getFallbackOpponentRoster(state);
+      activeOrder = (typeof this.stateManager?.getOpponentBattingOrder === 'function')
+        ? this.stateManager.getOpponentBattingOrder()
+        : (state.opponentBattingOrder?.length ? state.opponentBattingOrder : activePlayerList.map((p) => p.id));
+      activeIndex = state.opponentBatterIndex || 0;
+    }
+
+    const orderLen = activeOrder.length || 1;
+    const curSlot = (activeIndex % orderLen) + 1;
+    const onDeckSlot = ((activeIndex + 1) % orderLen) + 1;
+    const inHoleSlot = ((activeIndex + 2) % orderLen) + 1;
+
+    const atBatPlayer = orderLen > 0 ? activePlayerList.find((p) => p.id === activeOrder[activeIndex % orderLen]) : null;
+    const onDeckPlayer = orderLen > 1 ? activePlayerList.find((p) => p.id === activeOrder[(activeIndex + 1) % orderLen]) : null;
+    const inHolePlayer = orderLen > 2 ? activePlayerList.find((p) => p.id === activeOrder[(activeIndex + 2) % orderLen]) : null;
+
+    // Courtesy Runner recommendation (Active only when my team is batting)
+    const courtesy = isMyTeamBatting && this.stateManager ? this.stateManager.getCourtesyRunnerRecommendation() : { eligible: false };
+
+    // Base Runners state
+    const runners = state.runnersOnBase || { '1B': null, '2B': null, '3B': null };
+    const getRunnerDisplayName = (baseKey) => {
+      const pId = runners[baseKey];
+      if (!pId) return null;
+      const p = activePlayerList.find((pl) => pl.id === pId) || state.players.find((pl) => pl.id === pId);
+      return p ? `${p.name} (#${p.jerseyNumber})` : 'Runner';
+    };
+    const r1 = getRunnerDisplayName('1B');
+    const r2 = getRunnerDisplayName('2B');
+    const r3 = getRunnerDisplayName('3B');
+    const runnersDesc = [
+      r1 ? `1B: ${r1}` : null,
+      r2 ? `2B: ${r2}` : null,
+      r3 ? `3B: ${r3}` : null,
+    ].filter(Boolean).join(' • ') || 'Bases Empty';
+
+    // Current half inning outs feed
+    const currentHalfOuts = (state.outHistory || []).filter(
+      (o) => o.inning === curInning && o.half === state.currentHalf
+    );
 
     return `
       <div class="game-tracker-subview">
@@ -696,32 +847,73 @@ export class DugoutUI {
             </div>
           </div>
 
-          <!-- Pillar 2: Outs Tracker -->
+          <!-- Pillar 2: Outs Tracker & Base Runners -->
           <div class="game-card game-card-outs">
             <div class="game-card-header">
-              <span class="game-card-title">⏱ Outs Tracker</span>
+              <span class="game-card-title">⏱ Outs & Base Runners</span>
               <button id="btn-game-out-reset" class="btn btn-secondary btn-sm" style="font-size: 0.72rem; padding: 3px 8px;">Reset Outs</button>
             </div>
 
+            <!-- Out Bubbles Indicator -->
             <div class="outs-bubbles-container">
-              <div class="outs-bubble-item ${outs >= 1 ? 'filled' : ''}" data-out="1">
+              <div class="outs-bubble-item ${outs >= 1 ? 'filled' : ''}" data-out="1" title="Toggle 1 Out">
                 <span class="bubble-circle"></span>
                 <span class="bubble-label">1 OUT</span>
               </div>
-              <div class="outs-bubble-item ${outs >= 2 ? 'filled' : ''}" data-out="2">
+              <div class="outs-bubble-item ${outs >= 2 ? 'filled' : ''}" data-out="2" title="Toggle 2 Outs">
                 <span class="bubble-circle"></span>
                 <span class="bubble-label">2 OUTS</span>
               </div>
-              <div class="outs-bubble-item ${outs >= 3 ? 'filled' : ''}" data-out="3">
+              <div class="outs-bubble-item ${outs >= 3 ? 'filled' : ''}" data-out="3" title="Toggle 3 Outs">
                 <span class="bubble-circle"></span>
                 <span class="bubble-label">3 OUTS</span>
               </div>
             </div>
 
+            <!-- Interactive Base Runners Diamond Widget -->
+            <div class="base-diamond-section">
+              <div class="diamond-grid-wrap">
+                <div class="diamond-field-shape">
+                  <div class="diamond-base base-2b ${runners['2B'] ? 'occupied' : ''}" data-base="2B" title="2nd Base (${r2 || 'Empty'}) - Tap to manage">
+                    <span class="base-tag">2B</span>
+                    ${runners['2B'] ? `<span class="base-runner-icon">🏃</span>` : ''}
+                  </div>
+                  <div class="diamond-base base-3b ${runners['3B'] ? 'occupied' : ''}" data-base="3B" title="3rd Base (${r3 || 'Empty'}) - Tap to manage">
+                    <span class="base-tag">3B</span>
+                    ${runners['3B'] ? `<span class="base-runner-icon">🏃</span>` : ''}
+                  </div>
+                  <div class="diamond-base base-1b ${runners['1B'] ? 'occupied' : ''}" data-base="1B" title="1st Base (${r1 || 'Empty'}) - Tap to manage">
+                    <span class="base-tag">1B</span>
+                    ${runners['1B'] ? `<span class="base-runner-icon">🏃</span>` : ''}
+                  </div>
+                  <div class="diamond-base base-hp" data-base="HP" title="Home Plate">
+                    <span class="base-tag">HP</span>
+                  </div>
+                </div>
+              </div>
+
+              <!-- Base Runner Status Strip -->
+              <div class="runners-status-strip">
+                <div class="runners-desc">
+                  <span class="runners-label">BASE RUNNERS:</span>
+                  <span class="runners-names" title="${runnersDesc}">${runnersDesc}</span>
+                </div>
+                <div class="runners-quick-actions">
+                  <button id="btn-quick-runner-1b" class="btn btn-secondary btn-xs" title="Toggle runner on 1st Base">
+                    ${runners['1B'] ? 'Clear 1B' : '+ Runner 1B'}
+                  </button>
+                  <button id="btn-quick-clear-bases" class="btn btn-secondary btn-xs" ${(!runners['1B'] && !runners['2B'] && !runners['3B']) ? 'disabled' : ''} title="Clear all bases">
+                    Clear All
+                  </button>
+                </div>
+              </div>
+            </div>
+
+            <!-- Outs Action Buttons -->
             <div class="outs-action-buttons">
-              <button id="btn-game-record-out" class="btn btn-danger btn-jumbo">
+              <button id="btn-game-record-out" class="btn btn-danger btn-jumbo" title="Record an out with play type, player, and base">
                 <span style="font-size: 1.4rem;">🛑</span>
-                <span>+1 OUT (Record Out)</span>
+                <span>+1 OUT (Record Play & Base)</span>
               </button>
               ${outs >= 3 ? `
                 <button id="btn-game-end-half" class="btn btn-warning btn-jumbo pulse-attention">
@@ -730,8 +922,26 @@ export class DugoutUI {
               ` : ''}
             </div>
 
+            <!-- Current Half-Inning Outs Feed -->
+            ${currentHalfOuts.length > 0 ? `
+              <div class="recent-outs-feed">
+                <div class="feed-header">
+                  <span>Outs Recorded (${isTop ? 'TOP' : 'BOT'} ${curInning}):</span>
+                </div>
+                <div class="feed-items">
+                  ${currentHalfOuts.map(o => `
+                    <div class="out-feed-badge">
+                      <span class="out-num-pill">${o.outNumber} OUT</span>
+                      <strong class="out-name">${o.playerName || 'Player'}</strong>
+                      <span class="out-desc">${o.description || (o.outType === 'strikeout' ? 'Strikeout (K)' : `Out at ${o.base}`)}</span>
+                    </div>
+                  `).join('')}
+                </div>
+              </div>
+            ` : ''}
+
             <!-- 2-Outs Courtesy Runner Banner -->
-            ${outs === 2 ? `
+            ${outs === 2 && isMyTeamBatting ? `
               <div class="courtesy-runner-box">
                 <div class="courtesy-icon">🏃‍♂️</div>
                 <div class="courtesy-details">
@@ -855,7 +1065,19 @@ export class DugoutUI {
         <div class="game-secondary-grid">
           <div class="game-card game-card-batting">
             <div class="game-card-header">
-              <span class="game-card-title">📋 Continuous Batting Order (Due Up)</span>
+              <div class="batting-header-info">
+                <div class="batting-title-row">
+                  <span class="game-card-title">📋 Continuous Batting Order (Due Up)</span>
+                  <span class="batting-status-pill ${isMyTeamBatting ? 'pill-batting-myteam' : 'pill-batting-opponent'}">
+                    ${isMyTeamBatting ? `⚾ ${state.teamName} (At Bat)` : `⚾ ${battingTeamName} (At Bat)`}
+                  </span>
+                </div>
+                <span class="batting-field-sub">
+                  ${isOpponentBatting
+                    ? `🛡️ <strong>${state.teamName}</strong> in Field (Defense) • Opponent Lineup Active`
+                    : `🛡️ <strong>${fieldingTeamName}</strong> in Field (Defense) • ${state.teamName} Offense`}
+                </span>
+              </div>
               <div class="batting-nav-btns">
                 <button id="btn-batter-prev" class="btn btn-secondary btn-sm" title="Previous batter">❮ Prev</button>
                 <button id="btn-batter-next" class="btn btn-primary btn-sm" title="Advance to next batter">Next Batter ❯</button>
@@ -863,11 +1085,11 @@ export class DugoutUI {
             </div>
 
             <div class="due-up-list">
-              <div class="due-up-item at-bat-item">
+              <div class="due-up-item at-bat-item ${isOpponentBatting ? 'opponent-atbat' : ''}">
                 <div class="due-up-badge badge-atbat">AT BAT</div>
                 <div class="due-up-info">
-                  <strong>${atBatPlayer ? atBatPlayer.name : 'None'}</strong>
-                  <span>Jersey #${atBatPlayer ? atBatPlayer.jerseyNumber : '--'} • Slot ${(bIndex % bOrder.length) + 1}</span>
+                  <strong>${atBatPlayer ? atBatPlayer.name : 'Batter 1'}</strong>
+                  <span>Jersey #${atBatPlayer ? atBatPlayer.jerseyNumber : '--'} • Slot ${curSlot} (${battingTeamName})</span>
                 </div>
                 <span class="due-up-icon">🎯</span>
               </div>
@@ -875,8 +1097,8 @@ export class DugoutUI {
               <div class="due-up-item on-deck-item">
                 <div class="due-up-badge badge-ondeck">ON DECK</div>
                 <div class="due-up-info">
-                  <strong>${onDeckPlayer ? onDeckPlayer.name : 'None'}</strong>
-                  <span>Jersey #${onDeckPlayer ? onDeckPlayer.jerseyNumber : '--'} • Slot {((bIndex + 1) % bOrder.length) + 1}</span>
+                  <strong>${onDeckPlayer ? onDeckPlayer.name : 'Batter 2'}</strong>
+                  <span>Jersey #${onDeckPlayer ? onDeckPlayer.jerseyNumber : '--'} • Slot ${onDeckSlot} (${battingTeamName})</span>
                 </div>
                 <span class="due-up-icon">🟡</span>
               </div>
@@ -884,19 +1106,25 @@ export class DugoutUI {
               <div class="due-up-item in-hole-item">
                 <div class="due-up-badge badge-inhole">IN HOLE</div>
                 <div class="due-up-info">
-                  <strong>${inHolePlayer ? inHolePlayer.name : 'None'}</strong>
-                  <span>Jersey #${inHolePlayer ? inHolePlayer.jerseyNumber : '--'} • Slot {((bIndex + 2) % bOrder.length) + 1}</span>
+                  <strong>${inHolePlayer ? inHolePlayer.name : 'Batter 3'}</strong>
+                  <span>Jersey #${inHolePlayer ? inHolePlayer.jerseyNumber : '--'} • Slot ${inHoleSlot} (${battingTeamName})</span>
                 </div>
                 <span class="due-up-icon">⚪</span>
               </div>
             </div>
 
-            <!-- In-Game Roster Modifiers -->
+            <!-- In-Game Roster Modifiers / Opponent Lineup Controls -->
             <div class="game-modifiers-row">
-              <span class="mod-title">Live In-Game Adjustments:</span>
-              <button id="btn-game-late" class="btn btn-secondary btn-sm">➕ Late Arrival</button>
-              <button id="btn-game-injured" class="btn btn-warning btn-sm">🚑 Player Injured / Out</button>
-              <button id="btn-game-recalculate" class="btn btn-secondary btn-sm" title="Re-solve downstream innings">🔄 Re-solve</button>
+              <span class="mod-title">${isOpponentBatting ? `Opponent Lineup (${battingTeamName}):` : `Live In-Game Adjustments (${state.teamName}):`}</span>
+              ${isOpponentBatting ? `
+                <button id="btn-edit-opp-lineup" class="btn btn-secondary btn-sm" title="View or edit opponent batter names and order">📋 Edit Opponent Lineup</button>
+                <button id="btn-game-injured" class="btn btn-warning btn-sm" title="Record defense injury/absence">🚑 Player Injured / Out</button>
+                <button id="btn-game-recalculate" class="btn btn-secondary btn-sm" title="Re-solve downstream innings">🔄 Re-solve</button>
+              ` : `
+                <button id="btn-game-late" class="btn btn-secondary btn-sm">➕ Late Arrival</button>
+                <button id="btn-game-injured" class="btn btn-warning btn-sm">🚑 Player Injured / Out</button>
+                <button id="btn-game-recalculate" class="btn btn-secondary btn-sm" title="Re-solve downstream innings">🔄 Re-solve</button>
+              `}
             </div>
           </div>
         </div>
@@ -980,8 +1208,13 @@ export class DugoutUI {
     return `
       <div class="mobile-section-menu mobile-hub-container">
         <div class="mobile-hub-header">
-          <div class="hub-header-badge">NNLL DUGOUT OPERATIONS</div>
-          <h3 class="hub-header-title">⚡ Command Menu</h3>
+          <div class="mobile-hub-header-top">
+            <img src="icon.jpeg" alt="dugout-admin Logo" class="hub-logo" width="44" height="44" />
+            <div>
+              <div class="hub-header-badge">NNLL DUGOUT OPERATIONS</div>
+              <h3 class="hub-header-title">dugout-admin</h3>
+            </div>
+          </div>
           <p class="hub-header-subtitle">Select any dugout tool or modal below for focused single-task management.</p>
         </div>
 
@@ -1565,7 +1798,7 @@ export class DugoutUI {
 
     // Outs Controls in Game View
     const btnGameRecordOut = document.getElementById('btn-game-record-out');
-    if (btnGameRecordOut) btnGameRecordOut.onclick = () => this.stateManager.recordOut();
+    if (btnGameRecordOut) btnGameRecordOut.onclick = () => this.showRecordOutModal(state);
 
     const btnGameOutReset = document.getElementById('btn-game-out-reset');
     if (btnGameOutReset) btnGameOutReset.onclick = () => this.stateManager.resetOuts();
@@ -1577,6 +1810,48 @@ export class DugoutUI {
       };
     });
 
+    // Interactive Base Diamond clicks
+    document.querySelectorAll('.diamond-base[data-base]').forEach((baseEl) => {
+      baseEl.onclick = () => {
+        const baseKey = baseEl.getAttribute('data-base');
+        if (!baseKey || baseKey === 'HP') return;
+        const runnerId = state.runnersOnBase ? state.runnersOnBase[baseKey] : null;
+        if (runnerId) {
+          this.showBaseRunnerActionsModal(state, baseKey, runnerId);
+        } else {
+          this.showPlaceRunnerModal(state, baseKey);
+        }
+      };
+    });
+
+    // Quick Runner Buttons
+    const btnQuickRunner1b = document.getElementById('btn-quick-runner-1b');
+    if (btnQuickRunner1b) {
+      btnQuickRunner1b.onclick = () => {
+        const r1 = state.runnersOnBase ? state.runnersOnBase['1B'] : null;
+        if (r1) {
+          this.stateManager.clearBaseRunner('1B');
+        } else {
+          const bContext = (typeof this.stateManager?.getBattingContext === 'function')
+            ? this.stateManager.getBattingContext()
+            : getBattingContextFromState(state);
+          const order = bContext.isMyTeamBatting ? (state.battingOrder || []) : (this.stateManager?.getOpponentBattingOrder?.() || state.opponentBattingOrder || []);
+          const idx = bContext.isMyTeamBatting ? (state.currentBatterIndex || 0) : (state.opponentBatterIndex || 0);
+          const curBatterId = order.length > 0 ? order[idx % order.length] : null;
+          if (curBatterId) {
+            this.stateManager.setBaseRunner('1B', curBatterId);
+          } else {
+            this.showPlaceRunnerModal(state, '1B');
+          }
+        }
+      };
+    }
+
+    const btnQuickClearBases = document.getElementById('btn-quick-clear-bases');
+    if (btnQuickClearBases) {
+      btnQuickClearBases.onclick = () => this.stateManager.clearAllBaseRunners();
+    }
+
     // Pitch Controls in Game View: Strike, Ball, In Play, Foul, Undo
     const btnPitchStrike = document.getElementById('btn-pitch-strike');
     if (btnPitchStrike) btnPitchStrike.onclick = () => this.stateManager.recordPitchStrike();
@@ -1585,7 +1860,7 @@ export class DugoutUI {
     if (btnPitchBall) btnPitchBall.onclick = () => this.stateManager.recordPitchBall();
 
     const btnPitchInPlay = document.getElementById('btn-pitch-inplay');
-    if (btnPitchInPlay) btnPitchInPlay.onclick = () => this.stateManager.recordPitchInPlay();
+    if (btnPitchInPlay) btnPitchInPlay.onclick = () => this.showInPlayModal(state);
 
     const btnPitchFoul = document.getElementById('btn-pitch-foul');
     if (btnPitchFoul) btnPitchFoul.onclick = () => this.stateManager.recordPitchFoul();
@@ -1621,6 +1896,9 @@ export class DugoutUI {
     });
 
     // In-game Modifiers
+    const btnEditOppLineup = document.getElementById('btn-edit-opp-lineup');
+    if (btnEditOppLineup) btnEditOppLineup.onclick = () => this.showOpponentLineupModal(state);
+
     const btnGameLate = document.getElementById('btn-game-late');
     if (btnGameLate) btnGameLate.onclick = () => this.showLateArrivalModal(state);
 
@@ -2021,36 +2299,646 @@ export class DugoutUI {
     };
   }
 
-  showRecordOutModal(state) {
-    const curInningRec = state.innings[state.currentInning - 1];
-    const catcherId = curInningRec ? curInningRec.assignments.C : null;
-    const catcher = state.players.find((p) => p.id === catcherId);
+  showRecordOutModal(state, defaults = {}) {
+    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
+      ? this.stateManager.getBattingContext()
+      : getBattingContextFromState(state);
+    const { isMyTeamBatting, battingTeamName } = battingContext;
+
+    const players = isMyTeamBatting
+      ? state.players
+      : ((typeof this.stateManager?.getOpponentPlayers === 'function') ? this.stateManager.getOpponentPlayers() : getFallbackOpponentRoster(state));
+    const battingOrder = isMyTeamBatting
+      ? state.battingOrder
+      : ((typeof this.stateManager?.getOpponentBattingOrder === 'function') ? this.stateManager.getOpponentBattingOrder() : (state.opponentBattingOrder?.length ? state.opponentBattingOrder : players.map((p) => p.id)));
+    const activeIndex = isMyTeamBatting ? (state.currentBatterIndex || 0) : (state.opponentBatterIndex || 0);
+    const curBatterId = battingOrder.length > 0 ? battingOrder[activeIndex % battingOrder.length] : null;
+    const curBatter = players.find((p) => p.id === curBatterId);
+
+    const runners = state.runnersOnBase || { '1B': null, '2B': null, '3B': null };
+    const runner1B = runners['1B'] ? (players.find((p) => p.id === runners['1B']) || state.players.find((p) => p.id === runners['1B'])) : null;
+    const runner2B = runners['2B'] ? (players.find((p) => p.id === runners['2B']) || state.players.find((p) => p.id === runners['2B'])) : null;
+    const runner3B = runners['3B'] ? (players.find((p) => p.id === runners['3B']) || state.players.find((p) => p.id === runners['3B'])) : null;
+
+    let selectedOutType = defaults.outType || 'ground_out';
+    let selectedBase = defaults.base || (selectedOutType === 'fly_out' ? 'AIR' : '1B');
+    let selectedPlayerId = defaults.playerId || (curBatterId || (players[0]?.id || ''));
+    let fieldSequence = Array.isArray(defaults.fieldPositions) ? [...defaults.fieldPositions] : [];
+    let shouldAdvanceBatter = defaults.advanceBatter !== undefined ? defaults.advanceBatter : true;
+
+    const outTypes = [
+      { id: 'ground_out', label: '⚾ Ground Out', defaultBase: '1B' },
+      { id: 'fly_out', label: '🕊️ Fly Out / Line Out', defaultBase: 'AIR' },
+      { id: 'force_out', label: '⚡ Force Out', defaultBase: '2B' },
+      { id: 'tag_out', label: '🏷️ Tag Out', defaultBase: '2B' },
+      { id: 'strikeout', label: '⚡ Strikeout (K)', defaultBase: 'HP' },
+    ];
+
+    const bases = [
+      { id: '1B', label: '1B' },
+      { id: '2B', label: '2B' },
+      { id: '3B', label: '3B' },
+      { id: 'HP', label: 'HP (Home)' },
+      { id: 'AIR', label: 'AIR (Flyout)' },
+    ];
+
+    const fielders = [
+      { pos: 'P', num: 1 },
+      { pos: 'C', num: 2 },
+      { pos: '1B', num: 3 },
+      { pos: '2B', num: 4 },
+      { pos: '3B', num: 5 },
+      { pos: 'SS', num: 6 },
+      { pos: 'LF', num: 7 },
+      { pos: 'CF', num: 8 },
+      { pos: 'RF', num: 9 },
+    ];
 
     const bodyHtml = `
-      <p style="color: #94a3b8; font-size: 0.9rem;">
-        Record the batter who made the out to track courtesy runner eligibility (when 2 outs are reached with catcher on base).
-      </p>
-      <div class="form-group">
-        <label class="form-label">Batter Who Made Out:</label>
-        <select id="modal-select-out-batter" class="form-select">
-          ${state.battingOrder.map((pId, idx) => {
-            const p = state.players.find((pl) => pl.id === pId);
-            return `<option value="${pId}">${idx + 1}. ${p.name} (#${p.jerseyNumber})</option>`;
-          }).join('')}
-        </select>
+      <div class="record-out-modal-body" style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-size: 0.84rem; color: #94a3b8; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
+          <span>Batting: <strong style="color: #fff;">${battingTeamName}</strong></span>
+          <span>Out: <strong style="color: #ef4444;">#${(state.currentOuts || 0) + 1}</strong> (${state.currentHalf} ${state.currentInning})</span>
+        </div>
+
+        <!-- 1. Player Put Out -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" style="font-size: 0.8rem; font-weight: 800; color: #38bdf8;">
+            1. Player Put Out:
+          </label>
+          <select id="modal-out-player-select" class="form-select">
+            ${curBatter ? `
+              <optgroup label="Current Batter">
+                <option value="${curBatter.id}" ${curBatter.id === selectedPlayerId ? 'selected' : ''}>
+                  🎯 ${curBatter.name} (#${curBatter.jerseyNumber}) — Current Batter
+                </option>
+              </optgroup>
+            ` : ''}
+            ${(runner1B || runner2B || runner3B) ? `
+              <optgroup label="Runners On Base">
+                ${runner1B ? `<option value="${runner1B.id}" data-base="1B" ${runner1B.id === selectedPlayerId ? 'selected' : ''}>🏃 1B: ${runner1B.name} (#${runner1B.jerseyNumber})</option>` : ''}
+                ${runner2B ? `<option value="${runner2B.id}" data-base="2B" ${runner2B.id === selectedPlayerId ? 'selected' : ''}>🏃 2B: ${runner2B.name} (#${runner2B.jerseyNumber})</option>` : ''}
+                ${runner3B ? `<option value="${runner3B.id}" data-base="3B" ${runner3B.id === selectedPlayerId ? 'selected' : ''}>🏃 3B: ${runner3B.name} (#${runner3B.jerseyNumber})</option>` : ''}
+              </optgroup>
+            ` : ''}
+            <optgroup label="Full Lineup / Roster">
+              ${battingOrder.map((pId, idx) => {
+                const p = players.find((pl) => pl.id === pId);
+                if (!p || p.id === curBatterId) return '';
+                return `<option value="${p.id}" ${p.id === selectedPlayerId ? 'selected' : ''}>${idx + 1}. ${p.name} (#${p.jerseyNumber})</option>`;
+              }).join('')}
+            </optgroup>
+          </select>
+        </div>
+
+        <!-- 2. Play / Out Type -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" style="font-size: 0.8rem; font-weight: 800; color: #38bdf8;">
+            2. Play / Out Type:
+          </label>
+          <div class="out-type-pills-grid" id="modal-out-types-grid">
+            ${outTypes.map((t) => `
+              <button type="button" class="btn-out-type-pill ${t.id === selectedOutType ? 'active' : ''}" data-out-type="${t.id}" data-def-base="${t.defaultBase}">
+                ${t.label}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- 3. Base Where Out Was Made -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <label class="form-label" style="font-size: 0.8rem; font-weight: 800; color: #38bdf8;">
+            3. Base Where Out Was Made:
+          </label>
+          <div class="base-select-pills-row" id="modal-out-bases-row">
+            ${bases.map((b) => `
+              <button type="button" class="btn-base-pill ${b.id === selectedBase ? 'active' : ''}" data-base="${b.id}">
+                ${b.label}
+              </button>
+            `).join('')}
+          </div>
+        </div>
+
+        <!-- 4. Defensive Sequence (Fielders Involved) -->
+        <div class="form-group" style="margin-bottom: 0;">
+          <div style="display: flex; justify-content: space-between; align-items: center;">
+            <label class="form-label" style="font-size: 0.8rem; font-weight: 800; color: #38bdf8; margin: 0;">
+              4. Defensive Play (Tap Fielders Involved):
+            </label>
+            <button type="button" id="modal-btn-clear-seq" class="btn btn-secondary btn-xs" style="font-size: 0.7rem; padding: 2px 6px;">Reset</button>
+          </div>
+          <div class="defense-chips-grid">
+            ${fielders.map((f) => `
+              <button type="button" class="btn-def-chip" data-pos="${f.pos}" data-num="${f.num}" title="${f.pos} (#${f.num})">
+                ${f.pos}
+              </button>
+            `).join('')}
+          </div>
+          <div id="modal-seq-preview" style="margin-top: 6px; font-size: 0.8rem; color: #cbd5e1; background: rgba(15,23,42,0.6); padding: 5px 8px; border-radius: 6px; min-height: 28px; display: flex; align-items: center;">
+            Play Sequence: <span id="modal-seq-text" style="color: #38bdf8; font-weight: 700; margin-left: 6px;">${fieldSequence.length > 0 ? fieldSequence.join(' ➔ ') : '(None)'}</span>
+          </div>
+        </div>
+
+        <!-- Advance Batter Checkbox -->
+        <div style="display: flex; align-items: center; gap: 8px; padding-top: 4px;">
+          <input type="checkbox" id="modal-check-advance-batter" ${shouldAdvanceBatter ? 'checked' : ''} style="width: 16px; height: 16px; cursor: pointer;" />
+          <label for="modal-check-advance-batter" style="font-size: 0.82rem; color: #cbd5e1; cursor: pointer; user-select: none;">
+            Advance to next batter in order
+          </label>
+        </div>
       </div>
     `;
 
     const footerHtml = `
       <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
-      <button id="modal-confirm-out-record" class="btn btn-danger">+1 Out</button>
+      <button id="modal-confirm-out-record" class="btn btn-danger" style="font-weight: 800;">🛑 Confirm Out</button>
     `;
 
-    this.showModal('🔴 Record Out & Track Courtesy Runner', bodyHtml, footerHtml);
+    this.showModal(`🛑 Record Out — ${battingTeamName}`, bodyHtml, footerHtml);
+
+    // Pill selection logic
+    const playerSelect = document.getElementById('modal-out-player-select');
+    if (playerSelect) {
+      playerSelect.onchange = () => {
+        selectedPlayerId = playerSelect.value;
+        const selectedOpt = playerSelect.selectedOptions[0];
+        const runnerBase = selectedOpt?.getAttribute('data-base');
+        if (runnerBase) {
+          selectedBase = runnerBase;
+          document.querySelectorAll('.btn-base-pill').forEach((p) => {
+            p.classList.toggle('active', p.getAttribute('data-base') === runnerBase);
+          });
+          if (selectedOutType === 'ground_out') {
+            selectedOutType = 'force_out';
+            document.querySelectorAll('.btn-out-type-pill').forEach((p) => {
+              p.classList.toggle('active', p.getAttribute('data-out-type') === 'force_out');
+            });
+          }
+        }
+      };
+    }
+
+    document.querySelectorAll('.btn-out-type-pill').forEach((pill) => {
+      pill.onclick = () => {
+        document.querySelectorAll('.btn-out-type-pill').forEach((p) => p.classList.remove('active'));
+        pill.classList.add('active');
+        selectedOutType = pill.getAttribute('data-out-type');
+        const defBase = pill.getAttribute('data-def-base');
+        if (defBase) {
+          selectedBase = defBase;
+          document.querySelectorAll('.btn-base-pill').forEach((b) => {
+            b.classList.toggle('active', b.getAttribute('data-base') === defBase);
+          });
+        }
+      };
+    });
+
+    document.querySelectorAll('.btn-base-pill').forEach((pill) => {
+      pill.onclick = () => {
+        document.querySelectorAll('.btn-base-pill').forEach((b) => b.classList.remove('active'));
+        pill.classList.add('active');
+        selectedBase = pill.getAttribute('data-base');
+      };
+    });
+
+    const updateSeqDisplay = () => {
+      const textEl = document.getElementById('modal-seq-text');
+      if (textEl) {
+        textEl.textContent = fieldSequence.length > 0 ? fieldSequence.join(' ➔ ') : '(None)';
+      }
+    };
+
+    document.querySelectorAll('.btn-def-chip').forEach((chip) => {
+      chip.onclick = () => {
+        const pos = chip.getAttribute('data-pos');
+        if (pos) {
+          fieldSequence.push(pos);
+          updateSeqDisplay();
+        }
+      };
+    });
+
+    const btnClearSeq = document.getElementById('modal-btn-clear-seq');
+    if (btnClearSeq) {
+      btnClearSeq.onclick = () => {
+        fieldSequence = [];
+        updateSeqDisplay();
+      };
+    }
 
     document.getElementById('modal-confirm-out-record').onclick = () => {
-      const batterId = document.getElementById('modal-select-out-batter').value;
-      this.stateManager.recordOut(batterId);
+      const advanceChecked = document.getElementById('modal-check-advance-batter')?.checked ?? true;
+      let clearBase = null;
+      if (runners['1B'] === selectedPlayerId) clearBase = '1B';
+      else if (runners['2B'] === selectedPlayerId) clearBase = '2B';
+      else if (runners['3B'] === selectedPlayerId) clearBase = '3B';
+      if (defaults.clearRunnerBase) clearBase = defaults.clearRunnerBase;
+
+      const playerObj = players.find((p) => p.id === selectedPlayerId) || state.players.find((p) => p.id === selectedPlayerId);
+      const resolvedName = playerObj ? `${playerObj.name} (#${playerObj.jerseyNumber})` : null;
+
+      if (typeof this.stateManager?.recordOut === 'function') {
+        this.stateManager.recordOut({
+          playerId: selectedPlayerId,
+          playerName: resolvedName,
+          base: selectedBase,
+          outType: selectedOutType,
+          fieldPositions: fieldSequence,
+          clearRunnerBase: clearBase,
+          advanceBatter: advanceChecked,
+        });
+      }
+      this.closeModal();
+    };
+  }
+
+  showInPlayModal(state) {
+    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
+      ? this.stateManager.getBattingContext()
+      : getBattingContextFromState(state);
+    const { isMyTeamBatting, battingTeamName } = battingContext;
+
+    const players = isMyTeamBatting
+      ? state.players
+      : ((typeof this.stateManager?.getOpponentPlayers === 'function') ? this.stateManager.getOpponentPlayers() : getFallbackOpponentRoster(state));
+    const battingOrder = isMyTeamBatting
+      ? state.battingOrder
+      : ((typeof this.stateManager?.getOpponentBattingOrder === 'function') ? this.stateManager.getOpponentBattingOrder() : (state.opponentBattingOrder?.length ? state.opponentBattingOrder : players.map((p) => p.id)));
+    const activeIndex = isMyTeamBatting ? (state.currentBatterIndex || 0) : (state.opponentBatterIndex || 0);
+    const curBatterId = battingOrder.length > 0 ? battingOrder[activeIndex % battingOrder.length] : null;
+    const curBatter = players.find((p) => p.id === curBatterId);
+    const curBatterName = curBatter ? `${curBatter.name} (#${curBatter.jerseyNumber})` : 'Current Batter';
+
+    const bodyHtml = `
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="font-size: 0.84rem; color: #94a3b8; border-bottom: 1px solid rgba(255,255,255,0.08); padding-bottom: 8px;">
+          At Bat: <strong style="color: #fff;">${curBatterName}</strong> (${battingTeamName})
+        </div>
+
+        <p style="color: #cbd5e1; font-size: 0.88rem; margin: 0;">
+          Ball put in play (+1 pitch). Choose the outcome:
+        </p>
+
+        <!-- Option A: Out on Play -->
+        <button id="modal-inplay-btn-out" class="btn btn-danger" style="display: flex; align-items: center; gap: 12px; padding: 12px 14px; text-align: left;">
+          <span style="font-size: 1.5rem;">🛑</span>
+          <div>
+            <strong style="display: block; font-size: 0.95rem; color: #fff;">Out on Play (Batter or Runner)</strong>
+            <span style="font-size: 0.78rem; color: #fca5a5;">Specify ground out, fly out, or force at base</span>
+          </div>
+        </button>
+
+        <!-- Option B: Safe Hit / On Base -->
+        <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(56, 189, 248, 0.3); border-radius: 10px; padding: 12px;">
+          <strong style="color: #38bdf8; font-size: 0.85rem; display: block; margin-bottom: 8px;">
+            🟢 Safe Hit / Batter Reaches Base:
+          </strong>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px;">
+            <button type="button" class="btn btn-secondary modal-btn-hit" data-hit="1B" style="font-weight: 700; font-size: 0.82rem;">
+              ⚾ Single (1B)
+            </button>
+            <button type="button" class="btn btn-secondary modal-btn-hit" data-hit="2B" style="font-weight: 700; font-size: 0.82rem;">
+              🚀 Double (2B)
+            </button>
+            <button type="button" class="btn btn-secondary modal-btn-hit" data-hit="3B" style="font-weight: 700; font-size: 0.82rem;">
+              ⚡ Triple (3B)
+            </button>
+            <button type="button" class="btn btn-secondary modal-btn-hit" data-hit="HR" style="font-weight: 700; font-size: 0.82rem; color: #fbbf24;">
+              🏆 Home Run
+            </button>
+            <button type="button" class="btn btn-secondary modal-btn-hit" data-hit="FC" style="font-weight: 700; font-size: 0.82rem;">
+              👟 Error / FC (1B)
+            </button>
+          </div>
+        </div>
+
+        <!-- Option C: Quick In Play -->
+        <button id="modal-inplay-btn-quick" class="btn btn-secondary btn-sm" style="font-size: 0.78rem; padding: 8px; color: #94a3b8;">
+          ⚡ Quick +1 Pitch (Advance batter only, no base tracking)
+        </button>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+    `;
+
+    this.showModal('⚾ Ball In Play Outcome', bodyHtml, footerHtml);
+
+    // Option A: Out on play
+    document.getElementById('modal-inplay-btn-out').onclick = () => {
+      this.closeModal();
+      this.stateManager.recordPitches(1);
+      this.stateManager.resetBatterCount();
+      this.showRecordOutModal(this.stateManager.state, {
+        playerId: curBatterId,
+        outType: 'ground_out',
+        base: '1B',
+        advanceBatter: true,
+      });
+    };
+
+    // Option B: Safe Hit
+    document.querySelectorAll('.modal-btn-hit').forEach((btn) => {
+      btn.onclick = () => {
+        const hitType = btn.getAttribute('data-hit');
+        this.closeModal();
+        this.stateManager.recordPitches(1);
+        this.stateManager.resetBatterCount();
+
+        if (hitType === '1B' || hitType === 'FC') {
+          if (curBatterId) this.stateManager.setBaseRunner('1B', curBatterId);
+        } else if (hitType === '2B') {
+          if (curBatterId) this.stateManager.setBaseRunner('2B', curBatterId);
+        } else if (hitType === '3B') {
+          if (curBatterId) this.stateManager.setBaseRunner('3B', curBatterId);
+        } else if (hitType === 'HR') {
+          const teamKey = isMyTeamBatting ? (state.isHomeTeam ? 'home' : 'opponent') : (state.isHomeTeam ? 'opponent' : 'home');
+          this.stateManager.recordRun(teamKey, 1);
+        }
+        this.stateManager.advanceBatter(1);
+      };
+    });
+
+    // Option C: Quick standard in-play
+    document.getElementById('modal-inplay-btn-quick').onclick = () => {
+      this.closeModal();
+      this.stateManager.recordPitchInPlay();
+    };
+  }
+
+  showBaseRunnerActionsModal(state, baseKey, runnerId) {
+    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
+      ? this.stateManager.getBattingContext()
+      : getBattingContextFromState(state);
+    const { isMyTeamBatting } = battingContext;
+
+    const players = isMyTeamBatting
+      ? state.players
+      : ((typeof this.stateManager?.getOpponentPlayers === 'function') ? this.stateManager.getOpponentPlayers() : getFallbackOpponentRoster(state));
+
+    const runner = players.find((p) => p.id === runnerId) || state.players.find((p) => p.id === runnerId);
+    const runnerName = runner ? `${runner.name} (#${runner.jerseyNumber})` : 'Runner';
+
+    const advanceTargets = [];
+    if (baseKey === '1B') {
+      advanceTargets.push({ target: '2B', label: 'Advance to 2nd Base (2B)' });
+      advanceTargets.push({ target: '3B', label: 'Advance to 3rd Base (3B)' });
+      advanceTargets.push({ target: 'HP', label: 'Score Run at Home (HP)' });
+    } else if (baseKey === '2B') {
+      advanceTargets.push({ target: '3B', label: 'Advance to 3rd Base (3B)' });
+      advanceTargets.push({ target: 'HP', label: 'Score Run at Home (HP)' });
+    } else if (baseKey === '3B') {
+      advanceTargets.push({ target: 'HP', label: 'Score Run at Home (HP)' });
+    }
+
+    const bodyHtml = `
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="background: rgba(245, 158, 11, 0.15); border: 1px solid #f59e0b; border-radius: 8px; padding: 10px 12px; display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.4rem;">🏃</span>
+          <div>
+            <strong style="color: #fbbf24; font-size: 0.95rem; display: block;">${runnerName}</strong>
+            <span style="font-size: 0.78rem; color: #cbd5e1;">Currently Occupying <strong>${baseKey}</strong></span>
+          </div>
+        </div>
+
+        <!-- 1. Out at Base -->
+        <button id="modal-runner-btn-out" class="btn btn-danger" style="display: flex; align-items: center; gap: 10px; padding: 10px 14px; text-align: left;">
+          <span>🛑</span>
+          <div>
+            <strong style="display: block; font-size: 0.9rem; color: #fff;">Record Out at ${baseKey}</strong>
+            <span style="font-size: 0.75rem; color: #fca5a5;">Tag out, force out, or pickoff at ${baseKey}</span>
+          </div>
+        </button>
+
+        <!-- 2. Advance Base -->
+        ${advanceTargets.length > 0 ? `
+          <div style="background: rgba(30, 41, 59, 0.6); border: 1px solid rgba(255,255,255,0.08); border-radius: 8px; padding: 10px 12px;">
+            <strong style="color: #38bdf8; font-size: 0.8rem; display: block; margin-bottom: 8px;">
+              ⏩ Advance Runner:
+            </strong>
+            <div style="display: flex; flex-direction: column; gap: 6px;">
+              ${advanceTargets.map((t) => `
+                <button type="button" class="btn btn-secondary modal-btn-advance-target" data-target="${t.target}" style="font-size: 0.8rem; text-align: left; padding: 8px 12px;">
+                  ${t.label}
+                </button>
+              `).join('')}
+            </div>
+          </div>
+        ` : ''}
+
+        <!-- 3. Clear Base -->
+        <button id="modal-runner-btn-clear" class="btn btn-secondary btn-sm" style="color: #cbd5e1; font-size: 0.78rem;">
+          ❌ Clear Runner from ${baseKey} (No Out)
+        </button>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+    `;
+
+    this.showModal(`🏃 Runner Management (${baseKey})`, bodyHtml, footerHtml);
+
+    document.getElementById('modal-runner-btn-out').onclick = () => {
+      this.closeModal();
+      this.showRecordOutModal(state, {
+        playerId: runnerId,
+        playerName: runnerName,
+        base: baseKey,
+        outType: 'tag_out',
+        clearRunnerBase: baseKey,
+        advanceBatter: false,
+      });
+    };
+
+    document.querySelectorAll('.modal-btn-advance-target').forEach((btn) => {
+      btn.onclick = () => {
+        const target = btn.getAttribute('data-target');
+        this.closeModal();
+        if (typeof this.stateManager?.advanceRunner === 'function') {
+          this.stateManager.advanceRunner(baseKey, target);
+        } else {
+          this.stateManager.clearBaseRunner(baseKey);
+          if (target !== 'HP') {
+            this.stateManager.setBaseRunner(target, runnerId);
+          }
+        }
+      };
+    });
+
+    document.getElementById('modal-runner-btn-clear').onclick = () => {
+      this.closeModal();
+      this.stateManager.clearBaseRunner(baseKey);
+    };
+  }
+
+  showPlaceRunnerModal(state, baseKey) {
+    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
+      ? this.stateManager.getBattingContext()
+      : getBattingContextFromState(state);
+    const { isMyTeamBatting, battingTeamName } = battingContext;
+
+    const players = isMyTeamBatting
+      ? state.players
+      : ((typeof this.stateManager?.getOpponentPlayers === 'function') ? this.stateManager.getOpponentPlayers() : getFallbackOpponentRoster(state));
+    const battingOrder = isMyTeamBatting
+      ? state.battingOrder
+      : ((typeof this.stateManager?.getOpponentBattingOrder === 'function') ? this.stateManager.getOpponentBattingOrder() : (state.opponentBattingOrder?.length ? state.opponentBattingOrder : players.map((p) => p.id)));
+    const activeIndex = isMyTeamBatting ? (state.currentBatterIndex || 0) : (state.opponentBatterIndex || 0);
+
+    const bodyHtml = `
+      <div style="display: flex; flex-direction: column; gap: 12px;">
+        <p style="color: #94a3b8; font-size: 0.88rem; margin: 0;">
+          Select a player to place on <strong>${baseKey}</strong> for ${battingTeamName}:
+        </p>
+        <div class="form-group" style="margin-bottom: 0;">
+          <select id="modal-select-place-runner" class="form-select">
+            ${battingOrder.map((pId, idx) => {
+              const p = players.find((pl) => pl.id === pId);
+              if (!p) return '';
+              const isDue = (idx === (activeIndex % (battingOrder.length || 1)));
+              return `<option value="${p.id}" ${isDue ? 'selected' : ''}>${idx + 1}. ${p.name} (#${p.jerseyNumber})${isDue ? ' [Current Batter]' : ''}</option>`;
+            }).join('')}
+          </select>
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+      <button id="modal-btn-confirm-place" class="btn btn-primary">Place on ${baseKey}</button>
+    `;
+
+    this.showModal(`➕ Place Runner on ${baseKey}`, bodyHtml, footerHtml);
+
+    document.getElementById('modal-btn-confirm-place').onclick = () => {
+      const select = document.getElementById('modal-select-place-runner');
+      if (select && select.value) {
+        this.stateManager.setBaseRunner(baseKey, select.value);
+      }
+      this.closeModal();
+    };
+  }
+
+  showOpponentLineupModal(state) {
+    const oppName = state.opponentName || 'Opponents';
+    const oppPlayers = (typeof this.stateManager?.getOpponentPlayers === 'function')
+      ? this.stateManager.getOpponentPlayers()
+      : getFallbackOpponentRoster(state);
+    const oppOrder = (typeof this.stateManager?.getOpponentBattingOrder === 'function')
+      ? [...this.stateManager.getOpponentBattingOrder()]
+      : (state.opponentBattingOrder?.length ? [...state.opponentBattingOrder] : oppPlayers.map((p) => p.id));
+
+    const bodyHtml = `
+      <div class="lineup-modal">
+        <div class="lineup-summary-strip" style="background: rgba(56, 189, 248, 0.1); border-left: 4px solid #38bdf8;">
+          <div>
+            <span style="font-weight: 700; color: #fff;">${oppName} Lineup:</span>
+            <span style="color: #7dd3fc; font-weight: 700; margin-left: 6px;">${oppPlayers.length} Batters</span>
+          </div>
+          <span style="font-size: 0.78rem; color: #94a3b8;">
+            Opponent Continuous Batting Order
+          </span>
+        </div>
+
+        <p style="font-size: 0.8rem; color: #94a3b8; margin: 10px 0 14px;">
+          Edit opponent batter names or jersey numbers as discovered from the umpire card or opposing dugout. Use <strong>▲ / ▼</strong> to adjust batting order slots.
+        </p>
+
+        <div class="lineup-modal-list" id="opp-lineup-list">
+          ${oppOrder.map((pId, idx) => {
+            const player = oppPlayers.find((p) => p.id === pId);
+            if (!player) return '';
+            return `
+              <div class="lineup-modal-item" data-player-id="${player.id}" data-slot-idx="${idx}">
+                <div class="item-left" style="width: 100%;">
+                  <div class="item-order-btns">
+                    <button class="btn-lineup-order opp-order-up" data-player-id="${player.id}" ${idx === 0 ? 'disabled' : ''} title="Move UP">▲</button>
+                    <button class="btn-lineup-order opp-order-down" data-player-id="${player.id}" ${idx === oppOrder.length - 1 ? 'disabled' : ''} title="Move DOWN">▼</button>
+                  </div>
+                  <span class="batting-slot-num" style="min-width: 28px; text-align: center;">${idx + 1}</span>
+                  <div style="display: flex; gap: 8px; flex: 1; align-items: center;">
+                    <input type="number" class="form-input opp-input-num" data-player-id="${player.id}" value="${player.jerseyNumber}" placeholder="#" style="width: 58px; text-align: center; font-weight: 700;" />
+                    <input type="text" class="form-input opp-input-name" data-player-id="${player.id}" value="${player.name}" placeholder="Batter Name" style="flex: 1; font-weight: 600;" />
+                  </div>
+                </div>
+              </div>
+            `;
+          }).join('')}
+        </div>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+      <button id="modal-save-opp-lineup" class="btn btn-primary">Save Opponent Lineup</button>
+    `;
+
+    this.showModal(`📋 ${oppName} — Continuous Batting Order`, bodyHtml, footerHtml);
+
+    // Bind Up / Down order buttons
+    document.querySelectorAll('.opp-order-up').forEach((btn) => {
+      btn.onclick = () => {
+        const pId = btn.getAttribute('data-player-id');
+        const idx = oppOrder.indexOf(pId);
+        if (idx > 0) {
+          const temp = oppOrder[idx - 1];
+          oppOrder[idx - 1] = oppOrder[idx];
+          oppOrder[idx] = temp;
+          if (typeof this.stateManager?.setOpponentBattingOrder === 'function') {
+            this.stateManager.setOpponentBattingOrder(oppOrder);
+          } else {
+            state.opponentBattingOrder = [...oppOrder];
+            if (typeof this.stateManager?.notify === 'function') this.stateManager.notify();
+          }
+          this.showOpponentLineupModal(this.stateManager?.state || state);
+        }
+      };
+    });
+
+    document.querySelectorAll('.opp-order-down').forEach((btn) => {
+      btn.onclick = () => {
+        const pId = btn.getAttribute('data-player-id');
+        const idx = oppOrder.indexOf(pId);
+        if (idx < oppOrder.length - 1) {
+          const temp = oppOrder[idx + 1];
+          oppOrder[idx + 1] = oppOrder[idx];
+          oppOrder[idx] = temp;
+          if (typeof this.stateManager?.setOpponentBattingOrder === 'function') {
+            this.stateManager.setOpponentBattingOrder(oppOrder);
+          } else {
+            state.opponentBattingOrder = [...oppOrder];
+            if (typeof this.stateManager?.notify === 'function') this.stateManager.notify();
+          }
+          this.showOpponentLineupModal(this.stateManager?.state || state);
+        }
+      };
+    });
+
+    // Save changes
+    document.getElementById('modal-save-opp-lineup').onclick = () => {
+      document.querySelectorAll('#opp-lineup-list .lineup-modal-item').forEach((row) => {
+        const pId = row.getAttribute('data-player-id');
+        const nameInput = row.querySelector('.opp-input-name');
+        const numInput = row.querySelector('.opp-input-num');
+        const newName = nameInput ? nameInput.value.trim() : null;
+        const newNum = numInput ? parseInt(numInput.value, 10) : null;
+        if (newName || !isNaN(newNum)) {
+          const updates = {
+            name: newName || 'Batter',
+            jerseyNumber: isNaN(newNum) ? 0 : newNum,
+          };
+          if (typeof this.stateManager?.updateOpponentPlayer === 'function') {
+            this.stateManager.updateOpponentPlayer(pId, updates);
+          } else {
+            const p = oppPlayers.find((pl) => pl.id === pId);
+            if (p) Object.assign(p, updates);
+            state.opponentPlayers = oppPlayers;
+          }
+        }
+      });
+      if (typeof this.stateManager?.notify === 'function') this.stateManager.notify();
       this.closeModal();
     };
   }
@@ -2390,12 +3278,37 @@ export class DugoutUI {
         console.warn('Could not auto-register team into teamStorage:', e);
       }
 
+      // Check if opponent roster exists in teamStorage or sample teams
+      let oppPlayers = null;
+      try {
+        const oppTeams = await teamStorage.listTeams();
+        const matchedOpp = oppTeams.find((t) => t.teamName.toLowerCase() === opponentName.toLowerCase());
+        if (matchedOpp) {
+          const oppFull = await teamStorage.getTeam(matchedOpp.teamId);
+          if (oppFull && oppFull.roster && oppFull.roster.length > 0) {
+            oppPlayers = oppFull.roster;
+          }
+        }
+      } catch (e) {
+        console.warn('Could not load opponent roster from teamStorage:', e);
+      }
+      if (!oppPlayers || oppPlayers.length === 0) {
+        const sampleOpp = SAMPLE_TEAMS.find((t) =>
+          t.teamName.toLowerCase().includes(opponentName.toLowerCase()) ||
+          opponentName.toLowerCase().includes(t.teamName.toLowerCase().split(' ')[0])
+        );
+        if (sampleOpp && sampleOpp.players) {
+          oppPlayers = sampleOpp.players;
+        }
+      }
+
       this.stateManager.initNewGame({
         teamId: finalTeamId,
         teamName,
         opponentName,
         isHomeTeam,
         players: playersToUse,
+        opponentPlayers: oppPlayers,
       });
 
       this.closeModal();

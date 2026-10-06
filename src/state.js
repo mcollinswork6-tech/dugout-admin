@@ -6,6 +6,44 @@ import { solveDefensiveGrid } from './solver.js';
 import { validateGameRules, calculatePlayerStats } from './rules.js';
 import { saveGame } from './storage.js';
 import { NNLL_RULES } from './constants.js';
+import { SAMPLE_TEAMS } from './sample-data.js';
+
+export function getFallbackOpponentPlayers(opponentName) {
+  if (opponentName) {
+    const oppLower = opponentName.toLowerCase().trim();
+    const matched = SAMPLE_TEAMS.find((t) => {
+      const tLower = t.teamName.toLowerCase();
+      return tLower.includes(oppLower) || oppLower.includes(tLower.split(' ')[0]);
+    });
+    if (matched && matched.players && matched.players.length > 0) {
+      return JSON.parse(JSON.stringify(matched.players));
+    }
+  }
+  return Array.from({ length: 9 }, (_, i) => ({
+    id: `opp_p_${i + 1}`,
+    name: `Opponent Batter ${i + 1}`,
+    jerseyNumber: i + 1,
+    eligiblePositions: { canPitch: true, canCatch: true, canPlayFirstBase: true },
+  }));
+}
+
+export function getBattingContextFromState(state) {
+  if (!state) return { isHome: true, isTop: true, isMyTeamBatting: false, isOpponentBatting: true, battingTeamName: 'Opponents', fieldingTeamName: 'Black Bats' };
+  const isHome = state.isHomeTeam !== false;
+  const isTop = state.currentHalf === 'TOP';
+  const isMyTeamBatting = isHome ? !isTop : isTop;
+  const battingTeamName = isMyTeamBatting ? (state.teamName || 'Black Bats') : (state.opponentName || 'Opponents');
+  const fieldingTeamName = isMyTeamBatting ? (state.opponentName || 'Opponents') : (state.teamName || 'Black Bats');
+
+  return {
+    isHome,
+    isTop,
+    isMyTeamBatting,
+    isOpponentBatting: !isMyTeamBatting,
+    battingTeamName,
+    fieldingTeamName,
+  };
+}
 
 export class GameStateManager {
   constructor(initialState = null) {
@@ -43,6 +81,9 @@ export class GameStateManager {
       activePitcherId: null,
       battingOrder: [], // Ordered array of playerIds
       currentBatterIndex: 0,
+      opponentPlayers: [], // Opponent roster
+      opponentBattingOrder: [], // Opponent batting order
+      opponentBatterIndex: 0,
       outHistory: [], // Array of playerIds who made outs in chronological order
       runnersOnBase: { '1B': null, '2B': null, '3B': null },
       pitcherRemovalInning: {}, // playerId -> inning number when removed
@@ -109,7 +150,7 @@ export class GameStateManager {
   /**
    * Initializes a new game with players and automatically solves the initial 6-inning defensive grid
    */
-  initNewGame({ teamId, teamName, opponentName, isHomeTeam, players, battingOrder }) {
+  initNewGame({ teamId, teamName, opponentName, isHomeTeam, players, battingOrder, opponentPlayers, opponentBattingOrder }) {
     this.state = this.getDefaultState();
     this.state.teamId = teamId || 'nnll-rivercats-11';
     this.state.teamName = teamName || 'NNLL River Cats';
@@ -121,6 +162,19 @@ export class GameStateManager {
     this.state.battingOrder = battingOrder
       ? [...battingOrder]
       : this.state.players.map((p) => p.id);
+
+    // Opponent Continuous Batting Order
+    if (opponentPlayers && opponentPlayers.length > 0) {
+      this.state.opponentPlayers = JSON.parse(JSON.stringify(opponentPlayers));
+      this.state.opponentBattingOrder = opponentBattingOrder
+        ? [...opponentBattingOrder]
+        : this.state.opponentPlayers.map((p) => p.id);
+    } else {
+      const fallback = getFallbackOpponentPlayers(this.state.opponentName);
+      this.state.opponentPlayers = fallback;
+      this.state.opponentBattingOrder = fallback.map((p) => p.id);
+    }
+    this.state.opponentBatterIndex = 0;
 
     // Initial Pitch counts
     this.state.playerPitches = {};
@@ -390,11 +444,23 @@ export class GameStateManager {
     });
 
     if (isStrikeout) {
-      const bOrder = this.state.battingOrder || [];
-      const bIndex = this.state.currentBatterIndex || 0;
-      const batterId = bOrder.length > 0 ? bOrder[bIndex % bOrder.length] : null;
-      this.recordOut(batterId);
-      this.advanceBatter(1);
+      const { isMyTeamBatting } = this.getBattingContext();
+      let batterId = null;
+      if (isMyTeamBatting) {
+        const bOrder = this.state.battingOrder || [];
+        const bIndex = this.state.currentBatterIndex || 0;
+        batterId = bOrder.length > 0 ? bOrder[bIndex % bOrder.length] : null;
+      } else {
+        const oppOrder = this.getOpponentBattingOrder();
+        const oppIndex = this.state.opponentBatterIndex || 0;
+        batterId = oppOrder.length > 0 ? oppOrder[oppIndex % oppOrder.length] : null;
+      }
+      this.recordOut({
+        playerId: batterId,
+        outType: 'strikeout',
+        base: 'HP',
+        advanceBatter: true,
+      });
     }
 
     this.notify();
@@ -583,18 +649,77 @@ export class GameStateManager {
     }
   }
 
-  recordOut(batterPlayerId) {
+  recordOut(options = {}) {
+    const opts = typeof options === 'string' ? { playerId: options } : (options || {});
+    const {
+      playerId = null,
+      playerName = null,
+      base = '1B', // '1B', '2B', '3B', 'HP', or 'AIR'
+      outType = 'ground_out', // 'ground_out', 'fly_out', 'line_out', 'force_out', 'tag_out', 'strikeout'
+      fieldPositions = [], // e.g. ['SS', '1B']
+      clearRunnerBase = null,
+      advanceBatter = true,
+      description = null,
+    } = opts;
+
     this.saveSnapshot();
     this.state.currentOuts = (this.state.currentOuts + 1) % 4;
 
-    if (batterPlayerId) {
-      this.state.outHistory.push({
-        playerId: batterPlayerId,
-        inning: this.state.currentInning,
-        half: this.state.currentHalf,
-        outNumber: this.state.currentOuts,
-        timestamp: Date.now(),
-      });
+    // Reset batter count on out
+    this.state.currentBalls = 0;
+    this.state.currentStrikes = 0;
+
+    if (!this.state.runnersOnBase) {
+      this.state.runnersOnBase = { '1B': null, '2B': null, '3B': null };
+    }
+
+    // Clear runner from base if specified or if force/tag out at a base
+    if (clearRunnerBase && this.state.runnersOnBase[clearRunnerBase]) {
+      this.state.runnersOnBase[clearRunnerBase] = null;
+    } else if (base && ['1B', '2B', '3B'].includes(base) && (outType === 'force_out' || outType === 'tag_out')) {
+      this.state.runnersOnBase[base] = null;
+    }
+
+    // Resolve player name if missing
+    let resolvedName = playerName;
+    if (!resolvedName && playerId) {
+      const p = this.state.players.find((pl) => pl.id === playerId) ||
+                (this.state.opponentPlayers || []).find((pl) => pl.id === playerId);
+      if (p) resolvedName = `${p.name} (#${p.jerseyNumber})`;
+    }
+
+    // Format play description if not provided
+    let playDesc = description;
+    if (!playDesc) {
+      const posStr = Array.isArray(fieldPositions) && fieldPositions.length > 0 ? ` (${fieldPositions.join(' ➔ ')})` : '';
+      const typeLabel = {
+        strikeout: 'Strikeout (K)',
+        ground_out: 'Ground Out',
+        fly_out: 'Fly Out',
+        line_out: 'Line Out',
+        force_out: 'Force Out',
+        tag_out: 'Tag Out',
+      }[outType] || 'Out';
+
+      const baseLabel = (base && base !== 'AIR') ? ` at ${base}` : (outType === 'fly_out' ? ' in air' : '');
+      playDesc = `${typeLabel}${baseLabel}${posStr}`;
+    }
+
+    this.state.outHistory.push({
+      playerId,
+      playerName: resolvedName || 'Batter',
+      inning: this.state.currentInning,
+      half: this.state.currentHalf,
+      outNumber: this.state.currentOuts,
+      base: base || '1B',
+      outType: outType || 'ground_out',
+      fieldPositions: Array.isArray(fieldPositions) ? fieldPositions : (fieldPositions ? [fieldPositions] : []),
+      description: playDesc,
+      timestamp: Date.now(),
+    });
+
+    if (advanceBatter) {
+      this.advanceBatter(1);
     }
 
     // If 3 outs, switch half or advance inning
@@ -710,10 +835,44 @@ export class GameStateManager {
     this.notify();
   }
 
+  getBattingContext() {
+    return getBattingContextFromState(this.state);
+  }
+
+  getOpponentPlayers() {
+    if (this.state.opponentPlayers && this.state.opponentPlayers.length > 0) {
+      return this.state.opponentPlayers;
+    }
+    const fallback = getFallbackOpponentPlayers(this.state.opponentName);
+    this.state.opponentPlayers = fallback;
+    if (!this.state.opponentBattingOrder || this.state.opponentBattingOrder.length === 0) {
+      this.state.opponentBattingOrder = fallback.map((p) => p.id);
+    }
+    return this.state.opponentPlayers;
+  }
+
+  getOpponentBattingOrder() {
+    if (this.state.opponentBattingOrder && this.state.opponentBattingOrder.length > 0) {
+      return this.state.opponentBattingOrder;
+    }
+    const players = this.getOpponentPlayers();
+    this.state.opponentBattingOrder = players.map((p) => p.id);
+    return this.state.opponentBattingOrder;
+  }
+
   advanceBatter(delta = 1) {
     this.saveSnapshot();
-    const len = this.state.battingOrder.length || 1;
-    this.state.currentBatterIndex = (this.state.currentBatterIndex + delta + len) % len;
+    const { isMyTeamBatting } = this.getBattingContext();
+
+    if (isMyTeamBatting) {
+      const len = this.state.battingOrder?.length || 1;
+      this.state.currentBatterIndex = (this.state.currentBatterIndex + delta + len) % len;
+    } else {
+      const oppOrder = this.getOpponentBattingOrder();
+      const len = oppOrder.length || 1;
+      const cur = this.state.opponentBatterIndex || 0;
+      this.state.opponentBatterIndex = (cur + delta + len) % len;
+    }
     this.notify();
   }
 
@@ -906,14 +1065,71 @@ export class GameStateManager {
   }
 
   setBaseRunner(base, playerId) {
+    if (!['1B', '2B', '3B'].includes(base)) return;
     this.saveSnapshot();
+    if (!this.state.runnersOnBase) this.state.runnersOnBase = { '1B': null, '2B': null, '3B': null };
     this.state.runnersOnBase[base] = playerId;
     this.notify();
   }
 
-  advanceBatter() {
+  clearBaseRunner(base) {
+    if (!['1B', '2B', '3B'].includes(base)) return;
     this.saveSnapshot();
-    this.state.currentBatterIndex = (this.state.currentBatterIndex + 1) % this.state.battingOrder.length;
+    if (this.state.runnersOnBase) {
+      this.state.runnersOnBase[base] = null;
+    }
+    this.notify();
+  }
+
+  clearAllBaseRunners() {
+    this.saveSnapshot();
+    this.state.runnersOnBase = { '1B': null, '2B': null, '3B': null };
+    this.notify();
+  }
+
+  advanceRunner(fromBase, toBase) {
+    if (!['1B', '2B', '3B'].includes(fromBase)) return;
+    this.saveSnapshot();
+    if (!this.state.runnersOnBase) this.state.runnersOnBase = { '1B': null, '2B': null, '3B': null };
+    const pId = this.state.runnersOnBase[fromBase];
+    this.state.runnersOnBase[fromBase] = null;
+    if (['1B', '2B', '3B'].includes(toBase)) {
+      this.state.runnersOnBase[toBase] = pId;
+    } else if (toBase === 'HP') {
+      const { isMyTeamBatting } = this.getBattingContext();
+      const teamKey = isMyTeamBatting ? (this.state.isHomeTeam ? 'home' : 'opponent') : (this.state.isHomeTeam ? 'opponent' : 'home');
+      this.recordRun(teamKey, 1);
+    }
+    this.notify();
+  }
+
+  updateOpponentPlayer(playerId, updates) {
+    this.saveSnapshot();
+    const players = this.getOpponentPlayers();
+    const p = players.find((pl) => pl.id === playerId);
+    if (p) {
+      Object.assign(p, updates);
+      this.notify();
+    }
+  }
+
+  setOpponentBattingOrder(newOrder) {
+    this.saveSnapshot();
+    this.state.opponentBattingOrder = [...newOrder];
+    this.notify();
+  }
+
+  resetOpponentLineup(players, battingOrder) {
+    this.saveSnapshot();
+    if (players && players.length > 0) {
+      this.state.opponentPlayers = JSON.parse(JSON.stringify(players));
+      this.state.opponentBattingOrder = battingOrder ? [...battingOrder] : this.state.opponentPlayers.map((p) => p.id);
+    } else {
+      const fallback = getFallbackOpponentPlayers(this.state.opponentName);
+      this.state.opponentPlayers = fallback;
+      this.state.opponentBattingOrder = fallback.map((p) => p.id);
+    }
+    this.state.opponentBatterIndex = 0;
     this.notify();
   }
 }

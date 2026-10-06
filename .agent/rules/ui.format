@@ -1,0 +1,233 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Dugout Admin UI Format Specification",
+  "description": "Visual format and design token schema derived from the dugout-admin application icon (icon.jpeg) ensuring UI consistency across mobile and desktop interfaces.",
+  "version": "1.0.0",
+  "brand": {
+    "name": "dugout-admin",
+    "displayName": "NNLL Minor AAA Dugout & Lineup Optimizer",
+    "shortName": "Dugout Admin",
+    "badgeText": "NNLL MINOR AAA",
+    "slogan": "Coaches & Managers Defensive Rotation Optimizer",
+    "logo": {
+      "assetPath": "icon.jpeg",
+      "format": "image/jpeg",
+      "dimensions": {
+        "width": 1024,
+        "height": 1024,
+        "aspectRatio": "1:1"
+      },
+      "shape": "squircle",
+      "borderRadiusRatio": 0.22,
+      "variants": {
+        "favicon": {
+          "width": 32,
+          "height": 32,
+          "borderRadius": "6px"
+        },
+        "appleTouchIcon": {
+          "width": 180,
+          "height": 180,
+          "borderRadius": "36px"
+        },
+        "header": {
+          "width": 40,
+          "height": 40,
+          "borderRadius": "9px",
+          "boxShadow": "0 2px 8px rgba(0, 0, 0, 0.45)",
+          "border": "1.5px solid rgba(255, 255, 255, 0.15)"
+        },
+        "auth": {
+          "width": 84,
+          "height": 84,
+          "borderRadius": "18px",
+          "boxShadow": "0 10px 25px -4px rgba(0, 0, 0, 0.6), 0 0 20px rgba(249, 115, 22, 0.25)",
+          "border": "2px solid rgba(249, 115, 22, 0.4)"
+        },
+        "modal": {
+          "width": 32,
+          "height": 32,
+          "borderRadius": "7px",
+          "boxShadow": "0 2px 6px rgba(0, 0, 0, 0.35)",
+          "border": "1px solid rgba(255, 255, 255, 0.12)"
+        },
+        "splash": {
+          "width": 96,
+          "height": 96,
+          "borderRadius": "20px",
+          "boxShadow": "0 12px 30px rgba(0, 0, 0, 0.6)",
+          "border": "2px solid rgba(255, 255, 255, 0.18)"
+        },
+        "print": {
+          "width": 48,
+          "height": 48,
+          "borderRadius": "8px",
+          "boxShadow": "none",
+          "border": "1px solid #cbd5e1"
+        }
+      }
+    }
+  },
+  "palette": {
+    "brandOrange": {
+      "hex": "#f97316",
+      "rgb": "249, 115, 22",
+      "hoverHex": "#ea580c",
+      "glowRgba": "rgba(249, 115, 22, 0.35)",
+      "description": "Primary action and emblem 'D' orange inspired by the dugout-admin logo."
+    },
+    "deepNavy": {
+      "hex": "#0a1120",
+      "rgb": "10, 17, 32",
+      "description": "Deepest canvas background matching the dark radial gradient behind the icon."
+    },
+    "shieldBlue": {
+      "hex": "#173b7a",
+      "rgb": "23, 59, 122",
+      "lightHex": "#2563eb",
+      "darkHex": "#0f1f3d",
+      "description": "Royal blue shield background of the dugout-admin emblem."
+    },
+    "fieldGreen": {
+      "hex": "#22c55e",
+      "rgb": "34, 197, 94",
+      "darkHex": "#15803d",
+      "bgRgba": "rgba(34, 197, 94, 0.15)",
+      "description": "Diamond outfield turf green featured in the emblem arc."
+    },
+    "infieldDirt": {
+      "hex": "#d8b175",
+      "rgb": "216, 177, 117",
+      "darkHex": "#b4833e",
+      "bgRgba": "rgba(216, 177, 117, 0.18)",
+      "description": "Basepath dirt and homeplate sand tan from the logo badge."
+    },
+    "baseballRed": {
+      "hex": "#ef4444",
+      "rgb": "239, 68, 68",
+      "darkHex": "#dc2626",
+      "bgRgba": "rgba(239, 68, 68, 0.18)",
+      "description": "Baseball red seams and clipboard header border."
+    },
+    "metallicTrim": {
+      "chromeWhite": "#ffffff",
+      "silverLight": "#f1f5f9",
+      "silverMid": "#cbd5e1",
+      "silverDark": "#94a3b8",
+      "description": "3D metallic white-and-silver face of the 'dugout-admin' lettering."
+    },
+    "badgeBronze": {
+      "hex": "#d4af37",
+      "rgb": "212, 175, 55",
+      "glowRgba": "rgba(212, 175, 55, 0.25)",
+      "description": "Circular analytics/stats badge trim from the lower-left emblem."
+    },
+    "surfaces": {
+      "bgPrimary": "#0f172a",
+      "bgSecondary": "#1e293b",
+      "bgCard": "#1e293b",
+      "bgHover": "#334155",
+      "borderDefault": "#334155",
+      "borderActive": "#38bdf8",
+      "textMain": "#f8fafc",
+      "textMuted": "#94a3b8",
+      "textDim": "#64748b"
+    }
+  },
+  "typography": {
+    "fontFamilies": {
+      "brand": "'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      "body": "'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif",
+      "mono": "ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace"
+    },
+    "brandDisplay": {
+      "fontFamily": "var(--font-brand)",
+      "fontWeight": 800,
+      "letterSpacing": "-0.025em",
+      "textTransform": "lowercase",
+      "color": "#ffffff",
+      "textShadow": "0 2px 4px rgba(0, 0, 0, 0.6)"
+    },
+    "scale": {
+      "xs": "0.75rem",
+      "sm": "0.85rem",
+      "base": "0.95rem",
+      "md": "1.05rem",
+      "lg": "1.25rem",
+      "xl": "1.5rem",
+      "xxl": "1.85rem"
+    }
+  },
+  "components": {
+    "header": {
+      "background": "#0f172a",
+      "borderBottom": "2px solid #2563eb",
+      "logoHeight": "40px",
+      "sticky": true,
+      "zIndex": 50
+    },
+    "authCard": {
+      "maxWidth": "440px",
+      "background": "rgba(30, 41, 59, 0.92)",
+      "backdropFilter": "blur(20px)",
+      "borderRadius": "18px",
+      "border": "1px solid rgba(56, 189, 248, 0.25)",
+      "boxShadow": "0 25px 50px -12px rgba(0, 0, 0, 0.75), 0 0 35px rgba(249, 115, 22, 0.15)"
+    },
+    "badges": {
+      "division": {
+        "background": "linear-gradient(135deg, #2563eb, #1d4ed8)",
+        "color": "#ffffff",
+        "fontWeight": 800,
+        "borderRadius": "9999px"
+      },
+      "brandAccent": {
+        "background": "linear-gradient(135deg, #f97316, #ea580c)",
+        "color": "#ffffff",
+        "fontWeight": 800,
+        "borderRadius": "6px"
+      }
+    },
+    "buttons": {
+      "primary": {
+        "background": "linear-gradient(135deg, #2563eb, #1d4ed8)",
+        "color": "#ffffff",
+        "borderRadius": "8px"
+      },
+      "accent": {
+        "background": "linear-gradient(135deg, #f97316, #ea580c)",
+        "color": "#ffffff",
+        "borderRadius": "8px"
+      }
+    },
+    "fieldDiamond": {
+      "aspectRatio": "400:360",
+      "outfieldGrass": "#143e26",
+      "infieldDirt": "#d8b175",
+      "baselinesChalk": "#ffffff",
+      "foulLines": "#ffffff",
+      "playerLabelFormat": "firstNameAndNumber",
+      "playerLabelExample": "Liam #2"
+    }
+  },
+  "validationRules": {
+    "logoIntegrity": {
+      "allowDistortion": false,
+      "requiredAspectRatio": "1:1",
+      "minDisplayWidthPx": 24,
+      "maxDisplayWidthPx": 180,
+      "requireSquircleBorderRadius": true,
+      "requireAltText": true
+    },
+    "themeConsistency": {
+      "contrastRatioMin": 4.5,
+      "allowedBrandFonts": ["Outfit", "Inter"],
+      "accentColorUsage": {
+        "orange": "Call-to-action buttons, key brand highlights, and live active indicators",
+        "blue": "Primary navigation, division badges, and infield badges",
+        "green": "Field confirmations, outbound defense, and success notifications",
+        "red": "Pitch count warnings, danger thresholds, and deletions"
+      }
+    }
+  }
+}

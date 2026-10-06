@@ -10,7 +10,7 @@ export const SAMPLE_TEAMS = [
     season: 'Spring 2026',
     headCoach: 'Coach Collins',
     adminEmail: 'mcollinswork6@gmail.com',
-    opponentName: 'Opponent',
+    opponentName: 'River Cats',
     createdAt: '2026-10-02T23:03:06.589Z',
     playerCount: 12,
     players: [

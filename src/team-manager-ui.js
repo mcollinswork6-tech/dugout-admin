@@ -93,7 +93,10 @@ export class TeamManagerUI {
           <div class="modal-header team-modal-header">
             <div class="team-modal-title-wrap">
               <span class="team-brand-pill">ORGANIZATION & TEAMS</span>
-              <h3 class="modal-title">⚾ Team & Roster Manager</h3>
+              <div class="team-modal-title-row">
+                <img src="icon.jpeg" alt="dugout-admin Logo" class="team-modal-logo" width="32" height="32" />
+                <h3 class="modal-title">Team & Roster Manager</h3>
+              </div>
               ${this.isSuperAdmin ? `
                 <span class="badge-super-admin" title="League Commissioner / Super User Admin - Full administrative and editing access across all teams">
                   🛡️ Super User Admin (All Teams)

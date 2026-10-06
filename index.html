@@ -7,12 +7,16 @@
   <meta name="description" content="Offline-first dugout management and defensive rotation optimizer for North Natomas Little League Minor AAA baseball with Firebase Authentication.">
   <meta name="theme-color" content="#0f172a">
 
+  <!-- Application Icon & Favicon -->
+  <link rel="icon" type="image/jpeg" href="icon.jpeg">
+  <link rel="apple-touch-icon" href="icon.jpeg">
+
   <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" crossorigin="anonymous">
 
-  <link rel="stylesheet" href="css/styles.css?v=mobile-resp-3.8">
+  <link rel="stylesheet" href="css/styles.css?v=cbo-dual-3.9">
 
   <!-- Firebase Modular SDK Import Map for native browser ES modules -->
   <script type="importmap">
@@ -32,14 +36,16 @@
 
   <!-- Main Dugout Optimizer Application Root (Gated behind authentication) -->
   <div id="app-root" style="display: none;">
-    <div style="padding: 40px; text-align: center; color: #94a3b8; font-family: sans-serif;">
-      <h2>⚾ Loading NNLL Dugout Optimizer...</h2>
+    <div class="app-loading-splash" style="padding: 60px 20px; text-align: center; color: #94a3b8; font-family: 'Inter', sans-serif;">
+      <img src="icon.jpeg" alt="Dugout Admin" style="width: 88px; height: 88px; border-radius: 20px; box-shadow: 0 12px 30px rgba(0, 0, 0, 0.6); border: 2px solid rgba(255, 255, 255, 0.18); margin-bottom: 18px; object-fit: cover;">
+      <h2 style="font-family: 'Outfit', sans-serif; color: #ffffff; font-weight: 700; font-size: 1.35rem; margin-bottom: 6px;">Loading Dugout Optimizer...</h2>
+      <p style="color: #64748b; font-size: 0.85rem;">North Natomas Little League Minor AAA</p>
     </div>
   </div>
 
   <!-- Modal Portal Root -->
   <div id="modal-container"></div>
 
-  <script type="module" src="src/app.js?v=mobile-resp-3.8"></script>
+  <script type="module" src="src/app.js?v=outs-base-4.0"></script>
 </body>
 </html>
