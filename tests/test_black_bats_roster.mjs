@@ -47,32 +47,36 @@ async function testBlackBatsRoster() {
 
   console.log('\n--- Verified 12 Black Bats Players ---');
   roster.forEach((p, idx) => {
-    console.log(` ${idx + 1}. #${p.jerseyNumber} ${p.name} (Pitch: ${p.eligiblePositions?.canPitch}, Catch: ${p.eligiblePositions?.canCatch}, 1B: ${p.eligiblePositions?.canPlayFirstBase})`);
+    console.log(` ${idx + 1}. #${p.jersey} ${p.firstName} ${p.lastName} (Pitch: ${p.canPitch}, Catch: ${p.canCatch})`);
   });
 
   // Verify all 12 official players
   const expectedPlayers = [
-    { name: 'Elias Collins', num: 33, p: true, c: true, b1: true },
-    { name: 'Hunter Huston', num: 5, p: true, c: true, b1: true },
-    { name: 'Jason Clark Jr.', num: 10, p: true, c: true, b1: true },
-    { name: 'Larry Parsons', num: 12, p: true, c: true, b1: true },
-    { name: 'Kenton Lassen', num: 8, p: false, c: false, b1: true },
-    { name: 'Mason Kaine', num: 21, p: true, c: true, b1: true },
-    { name: 'Calan Burley', num: 7, p: false, c: false, b1: false },
-    { name: 'Drew Bluford', num: 4, p: true, c: true, b1: false },
-    { name: 'Jameson Parker', num: 15, p: false, c: false, b1: false },
-    { name: 'Cody Byler', num: 18, p: true, c: false, b1: false },
-    { name: 'Elijah Stewart', num: 30, p: false, c: false, b1: false },
-    { name: 'Israel Iyere', num: 9, p: true, c: false, b1: true },
+    { first: 'Elias', last: 'Collins', num: 33, p: true, c: true },
+    { first: 'Hunter', last: 'Huston', num: 5, p: true, c: true },
+    { first: 'Jason', last: 'Clark Jr.', num: 10, p: true, c: true },
+    { first: 'Larry', last: 'Parsons', num: 12, p: true, c: true },
+    { first: 'Kenton', last: 'Lassen', num: 8, p: false, c: false },
+    { first: 'Mason', last: 'Kaine', num: 21, p: true, c: true },
+    { first: 'Calan', last: 'Burley', num: 7, p: false, c: false },
+    { first: 'Drew', last: 'Bluford', num: 4, p: true, c: true },
+    { first: 'Jameson', last: 'Parker', num: 15, p: false, c: false },
+    { first: 'Cody', last: 'Byler', num: 18, p: true, c: false },
+    { first: 'Elijah', last: 'Stewart', num: 30, p: false, c: false },
+    { first: 'Israel', last: 'Iyere', num: 9, p: true, c: false },
   ];
 
   for (const exp of expectedPlayers) {
-    const found = roster.find(p => p.name === exp.name);
-    console.assert(found, `Player ${exp.name} must be present in roster`);
-    console.assert(found.jerseyNumber === exp.num, `${exp.name} jersey number must be ${exp.num}`);
-    console.assert(Boolean(found.eligiblePositions?.canPitch) === exp.p, `${exp.name} canPitch mismatch`);
-    console.assert(Boolean(found.eligiblePositions?.canCatch) === exp.c, `${exp.name} canCatch mismatch`);
-    console.assert(Boolean(found.eligiblePositions?.canPlayFirstBase) === exp.b1, `${exp.name} canPlayFirstBase mismatch`);
+    const fullName = `${exp.first} ${exp.last}`;
+    const found = roster.find(p => p.name === fullName || (p.firstName === exp.first && p.lastName === exp.last));
+    console.assert(found, `Player ${fullName} must be present in roster`);
+    console.assert(found.jersey === exp.num, `${fullName} jersey must be ${exp.num}`);
+    console.assert(found.firstName === exp.first, `${fullName} firstName must be ${exp.first}`);
+    console.assert(found.lastName === exp.last, `${fullName} lastName must be ${exp.last}`);
+    console.assert(Boolean(found.canPitch ?? found.eligiblePositions?.canPitch) === exp.p, `${fullName} canPitch mismatch`);
+    console.assert(Boolean(found.canCatch ?? found.eligiblePositions?.canCatch) === exp.c, `${fullName} canCatch mismatch`);
+    console.assert(typeof found.age === 'number' && found.age > 0, `${fullName} age must be a valid number`);
+    console.assert(found.eligiblePositions?.canPlayFirstBase === undefined, `${fullName} must not have canPlayFirstBase`);
   }
 
   // Check that dummy players are NOT present

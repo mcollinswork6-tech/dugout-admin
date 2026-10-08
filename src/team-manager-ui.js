@@ -4,7 +4,14 @@
  */
 
 import { teamStorage } from './team-storage.js';
-import { LEAGUE_CONFIG, isSuperAdmin, LEAGUE_ROLES } from './constants.js';
+import {
+  LEAGUE_CONFIG,
+  isSuperAdmin,
+  LEAGUE_ROLES,
+  getMaxPitchesForAge,
+  calculatePitchRestDetails,
+  LITTLE_LEAGUE_PITCH_RULES,
+} from './constants.js';
 
 export class TeamManagerUI {
   constructor(stateManager, onTeamSwitched = () => {}) {
@@ -18,6 +25,7 @@ export class TeamManagerUI {
     this.stats = null;
     this.isAddingPlayer = false;
     this.isAddingTeam = false;
+    this.editingPlayerId = null;
     this.modalEl = null;
     this.message = null; // { type: 'success'|'error', text: '' }
     this.currentManager = null;
@@ -434,7 +442,7 @@ export class TeamManagerUI {
               `}
             </div>
             <p class="tab-subtitle" style="margin: 2px 0 0;">
-              ${isTeamAdmin ? 'Manage player position safety eligibility and jersey numbers for defensive rotation constraint solving.' : 'View opponent player safety eligibility (Pitcher, Catcher, 1st Base) and jersey numbers.'}
+              ${isTeamAdmin ? 'Manage player jersey numbers, first/last names, and safety eligibility (Pitcher, Catcher) for defensive rotation solving.' : 'View opponent player safety eligibility (Pitcher, Catcher) and jersey numbers.'}
             </p>
           </div>
           ${isTeamAdmin ? `
@@ -454,12 +462,12 @@ export class TeamManagerUI {
           <table class="roster-table">
             <thead>
               <tr>
-                <th style="width: 60px;">Jersey</th>
-                <th>Player Full Name</th>
-                <th title="Can pitch safely">Can Pitch</th>
-                <th title="Can catch safely">Can Catch</th>
-                <th title="Can play 1st base safely">Can Play 1B</th>
-                <th style="width: 80px; text-align: right;">${isTeamAdmin ? 'Actions' : 'Access'}</th>
+                <th style="width: 65px;">Jersey</th>
+                <th>Player Name</th>
+                <th style="width: 65px; text-align: center;">Age</th>
+                <th style="width: 80px; text-align: center;" title="Can pitch safely">Can Pitch</th>
+                <th style="width: 80px; text-align: center;" title="Can catch safely">Can Catch</th>
+                <th style="width: 130px; text-align: right;">${isTeamAdmin ? 'Actions' : 'Access'}</th>
               </tr>
             </thead>
             <tbody>
@@ -469,43 +477,93 @@ export class TeamManagerUI {
                     ${isTeamAdmin ? 'No players on this roster yet. Click <strong>➕ Add Player</strong> to add your team roster.' : 'No roster recorded yet for this opponent.'}
                   </td>
                 </tr>
-              ` : this.roster.map((p, idx) => `
-                <tr>
-                  <td>
-                    <span class="jersey-pill">#${p.jerseyNumber}</span>
-                  </td>
-                  <td>
-                    <strong>${p.name}</strong>
-                  </td>
-                  <td>
-                    <label class="pos-tag-toggle" style="${!isTeamAdmin ? 'cursor: not-allowed; opacity: 0.8;' : ''}">
-                      <input type="checkbox" class="toggle-player-tag" data-player-id="${p.id}" data-tag="canPitch" ${p.eligiblePositions?.canPitch ? 'checked' : ''} ${!isTeamAdmin ? 'disabled' : ''}>
-                      <span class="pos-tag-badge pos-p">P</span>
-                    </label>
-                  </td>
-                  <td>
-                    <label class="pos-tag-toggle" style="${!isTeamAdmin ? 'cursor: not-allowed; opacity: 0.8;' : ''}">
-                      <input type="checkbox" class="toggle-player-tag" data-player-id="${p.id}" data-tag="canCatch" ${p.eligiblePositions?.canCatch ? 'checked' : ''} ${!isTeamAdmin ? 'disabled' : ''}>
-                      <span class="pos-tag-badge pos-c">C</span>
-                    </label>
-                  </td>
-                  <td>
-                    <label class="pos-tag-toggle" style="${!isTeamAdmin ? 'cursor: not-allowed; opacity: 0.8;' : ''}">
-                      <input type="checkbox" class="toggle-player-tag" data-player-id="${p.id}" data-tag="canPlayFirstBase" ${p.eligiblePositions?.canPlayFirstBase ? 'checked' : ''} ${!isTeamAdmin ? 'disabled' : ''}>
-                      <span class="pos-tag-badge pos-1b">1B</span>
-                    </label>
-                  </td>
-                  <td style="text-align: right;">
-                    ${isTeamAdmin ? `
-                      <button class="btn btn-secondary btn-xs btn-remove-player" data-player-id="${p.id}" title="Remove player from roster">
-                        ✕
-                      </button>
-                    ` : `
-                      <span style="color: #64748b; font-size: 0.75rem; font-weight: 600;">🔒 View Only</span>
-                    `}
-                  </td>
-                </tr>
-              `).join('')}
+              ` : this.roster.map((p, idx) => {
+                const isEditing = this.editingPlayerId === p.id && isTeamAdmin;
+                const jerseyVal = p.jersey !== undefined ? p.jersey : (p.jerseyNumber !== undefined ? p.jerseyNumber : '');
+                const firstNameVal = p.firstName || (p.name ? p.name.split(' ')[0] : '');
+                const lastNameVal = p.lastName !== undefined ? p.lastName : (p.name ? p.name.split(' ').slice(1).join(' ') : '');
+                const fullName = p.firstName ? `${p.firstName} ${p.lastName}`.trim() : (p.name || '');
+                const ageVal = p.age !== undefined ? p.age : (p['Player Age'] !== undefined ? p['Player Age'] : 10);
+                const canPitchChecked = p.canPitch !== undefined ? p.canPitch : !!p.eligiblePositions?.canPitch;
+                const canCatchChecked = p.canCatch !== undefined ? p.canCatch : !!p.eligiblePositions?.canCatch;
+
+                if (isEditing) {
+                  return `
+                    <tr class="row-editing" style="background: rgba(56, 189, 248, 0.12); border-left: 3px solid #38bdf8;">
+                      <td>
+                        <input type="number" id="input-edit-jersey-${p.id}" class="form-input form-input-xs" value="${jerseyVal}" min="0" max="99" style="width: 55px; padding: 4px 6px; font-weight: 700; text-align: center;" required>
+                      </td>
+                      <td>
+                        <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                          <input type="text" id="input-edit-first-name-${p.id}" class="form-input form-input-xs" value="${firstNameVal}" placeholder="First Name" style="flex: 1; min-width: 90px; padding: 4px 8px;" required>
+                          <input type="text" id="input-edit-last-name-${p.id}" class="form-input form-input-xs" value="${lastNameVal}" placeholder="Last Name" style="flex: 1; min-width: 90px; padding: 4px 8px;">
+                        </div>
+                      </td>
+                      <td style="text-align: center;">
+                        <input type="number" id="input-edit-age-${p.id}" class="form-input form-input-xs" value="${ageVal}" min="4" max="18" style="width: 50px; padding: 4px 4px; text-align: center; font-weight: 700;" placeholder="Age">
+                      </td>
+                      <td style="text-align: center;">
+                        <label class="pos-tag-toggle">
+                          <input type="checkbox" id="check-edit-pitch-${p.id}" ${canPitchChecked ? 'checked' : ''}>
+                          <span class="pos-tag-badge pos-p">P</span>
+                        </label>
+                      </td>
+                      <td style="text-align: center;">
+                        <label class="pos-tag-toggle">
+                          <input type="checkbox" id="check-edit-catch-${p.id}" ${canCatchChecked ? 'checked' : ''}>
+                          <span class="pos-tag-badge pos-c">C</span>
+                        </label>
+                      </td>
+                      <td style="text-align: right; white-space: nowrap;">
+                        <button class="btn btn-primary btn-xs btn-save-edit-player" data-player-id="${p.id}" title="Save player changes" style="font-weight: 600; padding: 4px 8px; margin-right: 4px;">
+                          💾 Save
+                        </button>
+                        <button class="btn btn-secondary btn-xs btn-cancel-edit-player" data-player-id="${p.id}" title="Cancel editing" style="padding: 4px 8px;">
+                          Cancel
+                        </button>
+                      </td>
+                    </tr>
+                  `;
+                }
+
+                return `
+                  <tr>
+                    <td>
+                      <span class="jersey-pill">#${jerseyVal}</span>
+                    </td>
+                    <td>
+                      <strong>${fullName}</strong>
+                    </td>
+                    <td style="text-align: center;">
+                      <span class="age-pill" style="display: inline-block; padding: 2px 7px; background: rgba(56, 189, 248, 0.12); border: 1px solid rgba(56, 189, 248, 0.28); border-radius: 6px; font-weight: 700; color: #38bdf8; font-size: 0.82rem;">${ageVal}</span>
+                    </td>
+                    <td style="text-align: center;">
+                      <label class="pos-tag-toggle" style="${!isTeamAdmin ? 'cursor: not-allowed; opacity: 0.8;' : ''}">
+                        <input type="checkbox" class="toggle-player-tag" data-player-id="${p.id}" data-tag="canPitch" ${canPitchChecked ? 'checked' : ''} ${!isTeamAdmin ? 'disabled' : ''}>
+                        <span class="pos-tag-badge pos-p">P</span>
+                      </label>
+                    </td>
+                    <td style="text-align: center;">
+                      <label class="pos-tag-toggle" style="${!isTeamAdmin ? 'cursor: not-allowed; opacity: 0.8;' : ''}">
+                        <input type="checkbox" class="toggle-player-tag" data-player-id="${p.id}" data-tag="canCatch" ${canCatchChecked ? 'checked' : ''} ${!isTeamAdmin ? 'disabled' : ''}>
+                        <span class="pos-tag-badge pos-c">C</span>
+                      </label>
+                    </td>
+                    <td style="text-align: right; white-space: nowrap;">
+                      ${isTeamAdmin ? `
+                        <button class="btn btn-secondary btn-xs btn-edit-player" data-player-id="${p.id}" title="Edit player details" style="padding: 3px 7px;">
+                          ✏️ Edit
+                        </button>
+                        <button class="btn btn-secondary btn-xs btn-remove-player" data-player-id="${p.id}" title="Remove player from roster" style="margin-left: 4px; padding: 3px 7px;">
+                          ✕
+                        </button>
+                      ` : `
+                        <span style="color: #64748b; font-size: 0.75rem; font-weight: 600;">🔒 View Only</span>
+                      `}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
         </div>
@@ -517,13 +575,21 @@ export class TeamManagerUI {
     return `
       <div class="inline-card-form">
         <h4>➕ Add Player to Roster</h4>
-        <div class="form-grid-3">
-          <div class="form-group" style="grid-column: span 2;">
-            <label class="form-label">Player Full Name</label>
-            <input type="text" id="input-player-name" class="form-input" placeholder="e.g., Liam Garcia" required>
+        <div class="form-grid-4" style="display: grid; grid-template-columns: 1fr 1fr 0.6fr 0.6fr; gap: 10px;">
+          <div class="form-group">
+            <label class="form-label">Player First Name</label>
+            <input type="text" id="input-player-first-name" class="form-input" placeholder="e.g., Liam" required>
           </div>
           <div class="form-group">
-            <label class="form-label">Jersey Number</label>
+            <label class="form-label">Player Last Name</label>
+            <input type="text" id="input-player-last-name" class="form-input" placeholder="e.g., Garcia" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Age</label>
+            <input type="number" id="input-player-age" class="form-input" placeholder="e.g., 10" min="4" max="18" value="10" required>
+          </div>
+          <div class="form-group">
+            <label class="form-label">Jersey #</label>
             <input type="number" id="input-jersey-num" class="form-input" placeholder="e.g., 7" min="0" max="99" required>
           </div>
         </div>
@@ -536,10 +602,6 @@ export class TeamManagerUI {
           <label class="checkbox-label">
             <input type="checkbox" id="check-can-catch" checked>
             <span>Can Catch (C)</span>
-          </label>
-          <label class="checkbox-label">
-            <input type="checkbox" id="check-can-1b" checked>
-            <span>Can Play 1st Base (1B)</span>
           </label>
         </div>
         <div class="form-actions">
@@ -616,12 +678,15 @@ export class TeamManagerUI {
               <tr>
                 <th style="width: 50px;">#</th>
                 <th>Player</th>
+                <th title="League Age">Age</th>
                 <th title="Games Played">GP</th>
                 <th title="Total Infield Innings">Infield</th>
                 <th title="Total Outfield Innings">Outfield</th>
                 <th title="Total Bench Innings">Bench</th>
                 <th title="Innings Pitched">IP</th>
                 <th title="Total Pitches Thrown">Pitches</th>
+                <th title="Daily Pitch Cap by Age">Daily Cap</th>
+                <th title="Mandatory Rest Days">Rest Req.</th>
                 <th title="Innings Caught">Catching</th>
                 <th title="Rule Violations Recorded">Violations</th>
               </tr>
@@ -629,28 +694,78 @@ export class TeamManagerUI {
             <tbody>
               ${displayStatsList.length === 0 ? `
                 <tr>
-                  <td colspan="10" style="text-align: center; padding: 24px; color: #94a3b8;">
+                  <td colspan="13" style="text-align: center; padding: 24px; color: #94a3b8;">
                     No game stats recorded yet for this team.
                   </td>
                 </tr>
-              ` : displayStatsList.map((st) => `
-                <tr>
-                  <td><span class="jersey-pill">#${st.jerseyNumber}</span></td>
-                  <td><strong>${st.name}</strong></td>
-                  <td>${st.gamesPlayed}</td>
-                  <td><span class="badge-infield">${st.inningsInfield} inn</span></td>
-                  <td><span class="badge-outfield">${st.inningsOutfield} inn</span></td>
-                  <td><span class="badge-bench">${st.inningsBench} inn</span></td>
-                  <td>${st.inningsPitched} inn</td>
-                  <td><strong>${st.pitchesThrown}</strong></td>
-                  <td>${st.inningsCaught} inn</td>
-                  <td>
-                    ${st.violations > 0 ? `<span class="badge-danger">${st.violations}</span>` : `<span class="badge-clean">0</span>`}
-                  </td>
-                </tr>
-              `).join('')}
+              ` : displayStatsList.map((st) => {
+                const playerObj = this.roster.find((p) => p.id === st.id);
+                const pAge = Number(playerObj?.age) || 10;
+                const pMax = getMaxPitchesForAge(pAge);
+                const pRest = calculatePitchRestDetails(st.pitchesThrown, pAge);
+                return `
+                  <tr>
+                    <td><span class="jersey-pill">#${st.jerseyNumber}</span></td>
+                    <td><strong>${st.name}</strong></td>
+                    <td><span class="badge-age">${pAge}</span></td>
+                    <td>${st.gamesPlayed}</td>
+                    <td><span class="badge-infield">${st.inningsInfield} inn</span></td>
+                    <td><span class="badge-outfield">${st.inningsOutfield} inn</span></td>
+                    <td><span class="badge-bench">${st.inningsBench} inn</span></td>
+                    <td>${st.inningsPitched} inn</td>
+                    <td><strong>${st.pitchesThrown}</strong></td>
+                    <td><span style="color: #94a3b8; font-size: 0.8rem;">${pMax} max</span></td>
+                    <td>
+                      <span class="rest-badge ${pRest.restDays >= 3 ? 'danger' : pRest.restDays >= 1 ? 'warning' : 'clean'}" title="Next eligible: ${pRest.formattedNextEligibleDate}">
+                        ${pRest.restDays}d rest
+                      </span>
+                    </td>
+                    <td>${st.inningsCaught} inn</td>
+                    <td>
+                      ${st.violations > 0 ? `<span class="badge-danger">${st.violations}</span>` : `<span class="badge-clean">0</span>`}
+                    </td>
+                  </tr>
+                `;
+              }).join('')}
             </tbody>
           </table>
+        </div>
+
+        <!-- Little League Regulation VI: Official Pitch Count & Rest Guide -->
+        <div class="ll-pitch-reference-card" style="margin-top: 20px; background: rgba(15, 23, 42, 0.7); border: 1px solid rgba(56, 189, 248, 0.25); border-radius: 10px; padding: 16px 20px;">
+          <h4 style="margin: 0 0 12px; color: #38bdf8; display: flex; align-items: center; gap: 8px; font-size: 0.95rem;">
+            <span>⚾</span> Little League Regulation VI: Pitch Count & Rest Days Official Rules
+          </h4>
+          <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; font-size: 0.8rem; color: #cbd5e1;">
+            <div style="background: rgba(30, 41, 59, 0.6); padding: 12px 14px; border-radius: 8px;">
+              <strong style="color: #f8fafc; font-size: 0.84rem;">Daily Maximums (by League Age):</strong>
+              <ul style="margin: 8px 0 0; padding-left: 18px; line-height: 1.6;">
+                <li><strong>Age 13–16:</strong> 95 pitches per day</li>
+                <li><strong>Age 11–12 (Majors):</strong> 85 pitches per day</li>
+                <li><strong>Age 9–10 (Minor AAA):</strong> 75 pitches per day</li>
+                <li><strong>Age 6–8:</strong> 50 pitches per day</li>
+              </ul>
+            </div>
+            <div style="background: rgba(30, 41, 59, 0.6); padding: 12px 14px; border-radius: 8px;">
+              <strong style="color: #f8fafc; font-size: 0.84rem;">Calendar Days Rest (League Age &le; 14):</strong>
+              <ul style="margin: 8px 0 0; padding-left: 18px; line-height: 1.6;">
+                <li><strong>66+ pitches:</strong> 4 calendar days rest</li>
+                <li><strong>51–65 pitches:</strong> 3 calendar days rest</li>
+                <li><strong>36–50 pitches:</strong> 2 calendar days rest</li>
+                <li><strong>21–35 pitches:</strong> 1 calendar day rest</li>
+                <li><strong>1–20 pitches:</strong> 0 days rest (eligible tomorrow)</li>
+              </ul>
+            </div>
+            <div style="background: rgba(30, 41, 59, 0.6); padding: 12px 14px; border-radius: 8px;">
+              <strong style="color: #f8fafc; font-size: 0.84rem;">Key Crossover & Threshold Exceptions:</strong>
+              <ul style="margin: 8px 0 0; padding-left: 18px; line-height: 1.6;">
+                <li><strong>41+ Pitches:</strong> Ineligible to catch rest of day</li>
+                <li><strong>4+ Innings Caught:</strong> Ineligible to pitch on that calendar day</li>
+                <li><strong>Threshold Rule:</strong> If a rest tier or 40-pitch cap is reached during an at-bat, pitcher may finish batter and count reverts to at-bat start if removed prior to next batter</li>
+                <li><strong>Consecutive Days:</strong> No player may pitch 3 days in a row</li>
+              </ul>
+            </div>
+          </div>
         </div>
       </div>
     `;
@@ -1064,29 +1179,105 @@ export class TeamManagerUI {
     const btnSaveNewPlayer = document.getElementById('btn-save-new-player');
     if (btnSaveNewPlayer) {
       btnSaveNewPlayer.onclick = async () => {
-        const name = document.getElementById('input-player-name')?.value;
-        const jerseyNumber = document.getElementById('input-jersey-num')?.value;
-        const canPitch = document.getElementById('check-can-pitch')?.checked;
-        const canCatch = document.getElementById('check-can-catch')?.checked;
-        const canPlayFirstBase = document.getElementById('check-can-1b')?.checked;
+        const firstName = document.getElementById('input-player-first-name')?.value?.trim();
+        const lastName = document.getElementById('input-player-last-name')?.value?.trim() || '';
+        const age = parseInt(document.getElementById('input-player-age')?.value, 10) || 10;
+        const jerseyNum = parseInt(document.getElementById('input-jersey-num')?.value, 10) || 0;
+        const canPitch = !!document.getElementById('check-can-pitch')?.checked;
+        const canCatch = !!document.getElementById('check-can-catch')?.checked;
 
-        if (!name || !name.trim()) {
-          alert('Please enter a player name');
+        if (!firstName) {
+          alert('Please enter a player first name');
           return;
         }
 
         await teamStorage.addPlayerToRoster(this.currentTeamId, {
-          name: name.trim(),
-          jerseyNumber: parseInt(jerseyNumber, 10) || 0,
-          eligiblePositions: { canPitch, canCatch, canPlayFirstBase }
+          firstName,
+          lastName,
+          name: `${firstName} ${lastName}`.trim(),
+          age,
+          'Player Age': age,
+          jersey: jerseyNum,
+          jerseyNumber: jerseyNum,
+          canPitch,
+          canCatch,
+          'Player First Name': firstName,
+          'Player Last name': lastName,
+          'Can Pitch flag': canPitch,
+          'can catch flag': canCatch,
+          eligiblePositions: { canPitch, canCatch }
         });
 
         this.isAddingPlayer = false;
         await this.loadData();
-        this.message = { type: 'success', text: `Added ${name} to roster!` };
+        this.message = { type: 'success', text: `Added #${jerseyNum} ${firstName} ${lastName} (Age ${age}) to roster!` };
         this.render();
       };
     }
+
+    // Edit player in roster (inline tuple editing)
+    document.querySelectorAll('.btn-edit-player').forEach((btn) => {
+      btn.onclick = () => {
+        const pId = btn.getAttribute('data-player-id');
+        this.editingPlayerId = pId;
+        this.render();
+      };
+    });
+
+    // Cancel player editing
+    document.querySelectorAll('.btn-cancel-edit-player').forEach((btn) => {
+      btn.onclick = () => {
+        this.editingPlayerId = null;
+        this.render();
+      };
+    });
+
+    // Save edited player tuple
+    document.querySelectorAll('.btn-save-edit-player').forEach((btn) => {
+      btn.onclick = async () => {
+        const pId = btn.getAttribute('data-player-id');
+        const inputJersey = document.getElementById(`input-edit-jersey-${pId}`);
+        const inputFirst = document.getElementById(`input-edit-first-name-${pId}`);
+        const inputLast = document.getElementById(`input-edit-last-name-${pId}`);
+        const inputAge = document.getElementById(`input-edit-age-${pId}`);
+        const checkPitch = document.getElementById(`check-edit-pitch-${pId}`);
+        const checkCatch = document.getElementById(`check-edit-catch-${pId}`);
+
+        const firstName = inputFirst ? inputFirst.value.trim() : '';
+        const lastName = inputLast ? inputLast.value.trim() : '';
+        const age = parseInt(inputAge?.value, 10) || 10;
+        const jersey = parseInt(inputJersey?.value, 10) || 0;
+        const canPitch = !!checkPitch?.checked;
+        const canCatch = !!checkCatch?.checked;
+
+        if (!firstName) {
+          alert('Player first name cannot be empty');
+          return;
+        }
+
+        await teamStorage.updatePlayerInRoster(this.currentTeamId, pId, {
+          firstName,
+          lastName,
+          name: `${firstName} ${lastName}`.trim(),
+          age,
+          'Player Age': age,
+          jersey,
+          jerseyNumber: jersey,
+          canPitch,
+          canCatch,
+          'Player First Name': firstName,
+          'Player Last name': lastName,
+          'Can Pitch flag': canPitch,
+          'can catch flag': canCatch,
+          eligiblePositions: { canPitch, canCatch }
+        });
+
+        this.editingPlayerId = null;
+        await this.loadData();
+        this.message = { type: 'success', text: `Updated player #${jersey} ${firstName} ${lastName} (Age ${age})!` };
+        this.render();
+      };
+    });
 
     // Toggle player tags in roster
     document.querySelectorAll('.toggle-player-tag').forEach((checkbox) => {
@@ -1096,6 +1287,7 @@ export class TeamManagerUI {
         const isChecked = checkbox.checked;
 
         await teamStorage.updatePlayerInRoster(this.currentTeamId, pId, {
+          [tag]: isChecked,
           eligiblePositions: { [tag]: isChecked }
         });
         await this.loadData();

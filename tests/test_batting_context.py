@@ -157,6 +157,107 @@ class TestBattingContextAndLineup(unittest.TestCase):
         self.assertIn('.defense-chips-grid', content)
         self.assertIn('.btn-def-chip', content)
 
+    def test_pitch_counter_and_runner_rules(self):
+        state_path = WORKSPACE / 'src' / 'state.js'
+        with open(state_path, 'r', encoding='utf-8') as f:
+            state_content = f.read()
+
+        # Check required state methods for rules
+        self.assertIn('walkCurrentBatter(', state_content)
+        self.assertIn('recordPitchHitBatter()', state_content)
+        self.assertIn('recordSafeHit(', state_content)
+        self.assertIn('recordPitchBall()', state_content)
+        self.assertIn('recordPitchStrike()', state_content)
+        self.assertIn('recordPitchFoul()', state_content)
+        self.assertIn('advanceRunner(fromBase, toBase)', state_content)
+
+        # In advanceRunner to HP, check that recordRun is invoked
+        self.assertIn("toBase === 'HP'", state_content)
+        self.assertIn("this.recordRun(teamKey, 1)", state_content)
+
+        ui_path = WORKSPACE / 'src' / 'ui.js'
+        with open(ui_path, 'r', encoding='utf-8') as f:
+            ui_content = f.read()
+
+        # Check UI triggers for HBP and Home Plate actions
+        self.assertIn('btn-pitch-hbp', ui_content)
+        self.assertIn('recordPitchHitBatter', ui_content)
+        self.assertIn('showHomePlateActionsModal', ui_content)
+        self.assertIn('recordSafeHit', ui_content)
+
+        # Simulation test: 4 balls walk logic with bases loaded force progression
+        def simulate_walk(runners, batter_id):
+            r1 = runners.get('1B')
+            r2 = runners.get('2B')
+            r3 = runners.get('3B')
+            run_scored = False
+            new_runners = dict(runners)
+
+            if r1:
+                if r2:
+                    if r3:
+                        run_scored = True  # Bases loaded force walk scores run
+                    new_runners['3B'] = r2
+                new_runners['2B'] = r1
+            new_runners['1B'] = batter_id
+            return new_runners, run_scored
+
+        # Test empty bases walk
+        r_empty, score_empty = simulate_walk({'1B': None, '2B': None, '3B': None}, 'p1')
+        self.assertEqual(r_empty['1B'], 'p1')
+        self.assertIsNone(r_empty['2B'])
+        self.assertIsNone(r_empty['3B'])
+        self.assertFalse(score_empty)
+
+        # Test runner on 1B walk
+        r_1b, score_1b = simulate_walk({'1B': 'p1', '2B': None, '3B': None}, 'p2')
+        self.assertEqual(r_1b['1B'], 'p2')
+        self.assertEqual(r_1b['2B'], 'p1')
+        self.assertIsNone(r_1b['3B'])
+        self.assertFalse(score_1b)
+
+        # Test bases loaded walk -> force run at HP
+        r_loaded, score_loaded = simulate_walk({'1B': 'p1', '2B': 'p2', '3B': 'p3'}, 'p4')
+        self.assertEqual(r_loaded['1B'], 'p4')
+        self.assertEqual(r_loaded['2B'], 'p1')
+        self.assertEqual(r_loaded['3B'], 'p2')
+        self.assertTrue(score_loaded)
+
+    def test_unified_scorecard_dynamic_batting_focus(self):
+        """Verify unified score card combines away and home teams with dynamic batting hero focus."""
+        ui_path = WORKSPACE / 'src' / 'ui.js'
+        with open(ui_path, 'r', encoding='utf-8') as f:
+            ui_content = f.read()
+
+        # Check single unified score card components exist
+        self.assertIn('unified-score-card', ui_content)
+        self.assertIn('matchup-header-strip', ui_content)
+        self.assertIn('batting-team-hero', ui_content)
+        self.assertIn('fielding-team-strip', ui_content)
+
+        # Check all 4 score button IDs are preserved
+        self.assertIn('btn-run-away-plus', ui_content)
+        self.assertIn('btn-run-away-minus', ui_content)
+        self.assertIn('btn-run-home-plus', ui_content)
+        self.assertIn('btn-run-home-minus', ui_content)
+
+        # Verify dynamic assignment logic
+        self.assertIn("const battingPlusId = isBattingAway ? 'btn-run-away-plus' : 'btn-run-home-plus';", ui_content)
+        self.assertIn("const battingMinusId = isBattingAway ? 'btn-run-away-minus' : 'btn-run-home-minus';", ui_content)
+        self.assertIn("const fieldingPlusId = isBattingAway ? 'btn-run-home-plus' : 'btn-run-away-plus';", ui_content)
+        self.assertIn("const fieldingMinusId = isBattingAway ? 'btn-run-home-minus' : 'btn-run-away-minus';", ui_content)
+
+        # Verify styles exist in css/styles.css
+        css_path = WORKSPACE / 'css' / 'styles.css'
+        with open(css_path, 'r', encoding='utf-8') as f:
+            css_content = f.read()
+
+        self.assertIn('.unified-score-card', css_content)
+        self.assertIn('.batting-team-hero', css_content)
+        self.assertIn('.btn-hero-run', css_content)
+        self.assertIn('.fielding-team-strip', css_content)
+
+
 if __name__ == '__main__':
     unittest.main()
 

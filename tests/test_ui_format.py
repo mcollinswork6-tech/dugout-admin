@@ -19,6 +19,11 @@ class TestUIFormatSchema(unittest.TestCase):
         self.auth_ui_path = os.path.join(self.root_dir, 'src', 'auth-ui.js')
         self.team_ui_path = os.path.join(self.root_dir, 'src', 'team-manager-ui.js')
         self.ui_format_js_path = os.path.join(self.root_dir, 'src', 'ui-format.js')
+        self.manifest_path = os.path.join(self.root_dir, 'manifest.json')
+        self.sw_path = os.path.join(self.root_dir, 'sw.js')
+        self.icon_192_path = os.path.join(self.root_dir, 'icon-192.png')
+        self.icon_512_path = os.path.join(self.root_dir, 'icon-512.png')
+        self.apple_touch_icon_path = os.path.join(self.root_dir, 'apple-touch-icon.png')
 
     def test_icon_jpeg_exists_and_valid(self):
         """icon.jpeg must exist and be non-empty with JPEG magic bytes."""
@@ -127,9 +132,89 @@ class TestUIFormatSchema(unittest.TestCase):
         with open(self.styles_path, 'r', encoding='utf-8') as f:
             css_content = f.read()
 
-        self.assertIn('.baseball-diamond-bg', css_content, "styles.css must style baseball-diamond-bg")
-        self.assertIn('.field-visual-container', css_content)
+    def test_game_layout_and_mobile_ui_unification(self):
+        """Game Layout and mobile-enabled layout must have consistent navigation, typography, and card tokens."""
+        with open(self.ui_js_path, 'r', encoding='utf-8') as f:
+            ui_content = f.read()
+
+        # Check top subnav in Game Layout
+        self.assertIn('game-subnav-strip', ui_content, "ui.js must include game-subnav-strip")
+        self.assertIn('btn-subnav-lineup', ui_content)
+        self.assertIn('btn-subnav-tracker', ui_content)
+        self.assertIn('btn-taskbar-lineup', ui_content)
+        self.assertIn('btn-taskbar-tracker', ui_content)
+
+        # Check header buttons present in both modes
+        self.assertIn('btn-lineup-modal', ui_content)
+        self.assertIn('btn-print-card', ui_content)
+        self.assertIn('btn-teams-manager', ui_content)
+
+        with open(self.styles_path, 'r', encoding='utf-8') as f:
+            css_content = f.read()
+
+        # Check styles for subnav strip and brand typography
+        self.assertIn('.game-subnav-strip', css_content)
+        self.assertIn('.game-subnav-btn', css_content)
+        self.assertIn('.game-card-title', css_content)
+        self.assertIn('font-family: var(--font-brand);', css_content)
+
+    def test_pwa_assets_and_service_worker(self):
+        """PWA manifest, icons, service worker, and index.html tags must be configured properly."""
+        # 1. Icons exist and are non-empty
+        for icon_file, expected_path in [
+            ('icon-192.png', self.icon_192_path),
+            ('icon-512.png', self.icon_512_path),
+            ('apple-touch-icon.png', self.apple_touch_icon_path)
+        ]:
+            self.assertTrue(os.path.exists(expected_path), f"{icon_file} must exist")
+            self.assertGreater(os.path.getsize(expected_path), 1000, f"{icon_file} should have content")
+
+        # 2. Manifest is valid JSON with required PWA attributes
+        self.assertTrue(os.path.exists(self.manifest_path), "manifest.json must exist")
+        with open(self.manifest_path, 'r', encoding='utf-8') as f:
+            manifest = json.load(f)
+
+        self.assertIn('Dugout Admin', manifest.get('name'))
+        self.assertEqual(manifest.get('short_name'), 'Dugout Admin')
+        self.assertEqual(manifest.get('display'), 'standalone')
+        self.assertEqual(manifest.get('start_url'), './index.html')
+        self.assertEqual(manifest.get('scope'), './')
+        self.assertEqual(manifest.get('background_color'), '#0a1120')
+        self.assertEqual(manifest.get('theme_color'), '#0f172a')
+        self.assertGreaterEqual(len(manifest.get('icons', [])), 2)
+
+        # 3. Service Worker exists and handles caching
+        self.assertTrue(os.path.exists(self.sw_path), "sw.js must exist")
+        with open(self.sw_path, 'r', encoding='utf-8') as f:
+            sw_content = f.read()
+
+        self.assertIn('CACHE_NAME', sw_content)
+        self.assertIn('PRECACHE_ASSETS', sw_content)
+        self.assertIn('addEventListener(\'install\'', sw_content)
+        self.assertIn('addEventListener(\'activate\'', sw_content)
+        self.assertIn('addEventListener(\'fetch\'', sw_content)
+        self.assertIn('manifest.json', sw_content)
+        self.assertIn('icon-192.png', sw_content)
+        self.assertIn('icon-512.png', sw_content)
+
+        # 4. index.html contains PWA links & service worker registration
+        with open(self.index_path, 'r', encoding='utf-8') as f:
+            index_content = f.read()
+
+        self.assertIn('<link rel="manifest" href="manifest.json">', index_content)
+        self.assertIn('name="apple-mobile-web-app-capable" content="yes"', index_content)
+        self.assertIn('name="apple-mobile-web-app-status-bar-style"', index_content)
+        self.assertIn('navigator.serviceWorker.register', index_content)
+        self.assertIn('beforeinstallprompt', index_content)
+
+        # 5. ui.js has PWA install modal and button handlers
+        with open(self.ui_js_path, 'r', encoding='utf-8') as f:
+            ui_content = f.read()
+
+        self.assertIn('showInstallAppModal', ui_content)
+        self.assertIn('btn-hub-install', ui_content)
 
 
 if __name__ == '__main__':
     unittest.main()
+

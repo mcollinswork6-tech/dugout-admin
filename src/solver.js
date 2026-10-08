@@ -33,11 +33,8 @@ function isAssignmentValid(
   };
 
   // 1. Safety Tags
-  if (player.eligiblePositions) {
-    if (position === 'P' && player.eligiblePositions.canPitch === false) return false;
-    if (position === 'C' && player.eligiblePositions.canCatch === false) return false;
-    if (position === '1B' && player.eligiblePositions.canPlayFirstBase === false) return false;
-  }
+  if (position === 'P' && (player.canPitch === false || player.eligiblePositions?.canPitch === false)) return false;
+  if (position === 'C' && (player.canCatch === false || player.eligiblePositions?.canCatch === false)) return false;
 
   // 2. Pitcher/Catcher Interaction Rules
   // A pitcher who delivers 41+ pitches cannot catch

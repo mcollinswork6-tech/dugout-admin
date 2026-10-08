@@ -7,6 +7,10 @@ import {
   INFIELD_POSITIONS,
   OUTFIELD_POSITIONS,
   NNLL_RULES,
+  LITTLE_LEAGUE_PITCH_RULES,
+  getMaxPitchesForAge,
+  calculatePitchRestDetails,
+  getRestTier,
 } from './constants.js';
 
 /**
@@ -15,15 +19,29 @@ import {
  * @param {Array} innings - Array of InningRecord
  * @param {Object} playerPitches - Map of playerId -> pitchesThrown
  * @param {Array} pitchersRemoved - Array of playerIds who pitched and were removed from the mound
+ * @param {Object} options - Optional context: atBatStartPitchCounts, gameDate
  */
-export function calculatePlayerStats(players, innings, playerPitches = {}, pitchersRemoved = []) {
+export function calculatePlayerStats(players, innings, playerPitches = {}, pitchersRemoved = [], options = {}) {
   const stats = {};
 
   players.forEach((player) => {
+    const playerAge = Number(player.age) || 10;
+    const maxPitches = getMaxPitchesForAge(playerAge);
+    const pitches = playerPitches[player.id] || 0;
+    const atBatStart = options.atBatStartPitchCounts?.[player.id] ?? null;
+    const restDetails = calculatePitchRestDetails(pitches, playerAge, atBatStart, options.gameDate);
+
     stats[player.id] = {
       playerId: player.id,
       name: player.name,
       jerseyNumber: player.jerseyNumber,
+      age: playerAge,
+      maxPitches,
+      pitchesRemaining: Math.max(0, maxPitches - pitches),
+      restDetails,
+      restDays: restDetails.restDays,
+      restDaysText: restDetails.effectiveRestDaysText,
+      canPlayCatcher: restDetails.canPlayCatcher,
       inningsPlayedInfield: 0,
       infieldInningsBy4: 0,
       inningsPlayedOutfield: 0,
@@ -32,7 +50,7 @@ export function calculatePlayerStats(players, innings, playerPitches = {}, pitch
       maxConsecutiveBench: 0,
       inningsCaught: 0,
       inningsPitched: 0,
-      pitchesThrown: playerPitches[player.id] || 0,
+      pitchesThrown: pitches,
       hasPitched: false,
       isRemovedPitcher: pitchersRemoved.includes(player.id),
       positionHistory: [], // Array of position strings for each inning
@@ -40,6 +58,7 @@ export function calculatePlayerStats(players, innings, playerPitches = {}, pitch
       infieldDeadlineViolation: false,
       pitcherCatcherViolation: false,
       catcherPitcherViolation: false,
+      dailyMaxViolation: false,
       safetyTagViolations: [],
     };
   });
@@ -130,7 +149,8 @@ export function calculatePlayerStats(players, innings, playerPitches = {}, pitch
 
     // Rule 3: Pitcher & Catcher Interaction:
     // A pitcher who delivers 41 or more pitches cannot play catcher for remainder of that game
-    if (st.pitchesThrown >= NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD) {
+    // (unless threshold exception at 40 pitches applies)
+    if (st.pitchesThrown >= NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD && !st.restDetails?.catcherThresholdExceptionApplies) {
       // Check if player is assigned to C in any subsequent/current inning
       const catchInningsAfter41 = [];
       innings.forEach((inn, idx) => {
@@ -148,21 +168,23 @@ export function calculatePlayerStats(players, innings, playerPitches = {}, pitch
       st.catcherPitcherViolation = true;
     }
 
-    // Rule 5: Safety tags check
-    if (player.eligiblePositions) {
-      innings.forEach((inn, idx) => {
-        const assignedPos = inn.assignments ? Object.entries(inn.assignments).find(([_, pid]) => pid === player.id)?.[0] : null;
-        if (assignedPos === 'P' && player.eligiblePositions.canPitch === false) {
-          st.safetyTagViolations.push({ inning: idx + 1, position: 'P', message: `${player.name} is marked as unable to pitch.` });
-        }
-        if (assignedPos === 'C' && player.eligiblePositions.canCatch === false) {
-          st.safetyTagViolations.push({ inning: idx + 1, position: 'C', message: `${player.name} is marked as unable to catch.` });
-        }
-        if (assignedPos === '1B' && player.eligiblePositions.canPlayFirstBase === false) {
-          st.safetyTagViolations.push({ inning: idx + 1, position: '1B', message: `${player.name} is marked as unable to play 1B.` });
-        }
-      });
+    // Rule 5: Daily maximum pitch limit violation
+    if (st.pitchesThrown > st.maxPitches && !st.restDetails?.dailyMaxThresholdExceptionApplies) {
+      st.dailyMaxViolation = true;
     }
+
+    // Rule 6: Safety tags check
+    innings.forEach((inn, idx) => {
+      const assignedPos = inn.assignments ? Object.entries(inn.assignments).find(([_, pid]) => pid === player.id)?.[0] : null;
+      const isPitchDisallowed = player.canPitch === false || player.eligiblePositions?.canPitch === false;
+      const isCatchDisallowed = player.canCatch === false || player.eligiblePositions?.canCatch === false;
+      if (assignedPos === 'P' && isPitchDisallowed) {
+        st.safetyTagViolations.push({ inning: idx + 1, position: 'P', message: `${player.name} is marked as unable to pitch.` });
+      }
+      if (assignedPos === 'C' && isCatchDisallowed) {
+        st.safetyTagViolations.push({ inning: idx + 1, position: 'C', message: `${player.name} is marked as unable to catch.` });
+      }
+    });
   });
 
   return stats;
@@ -177,7 +199,16 @@ export function validateGameRules(gameState) {
   const softWarnings = [];
   const urgentAlerts = [];
 
-  const stats = calculatePlayerStats(players, innings, playerPitches || {}, pitchersRemoved || []);
+  const stats = calculatePlayerStats(
+    players,
+    innings,
+    playerPitches || {},
+    pitchersRemoved || [],
+    {
+      atBatStartPitchCounts: gameState.atBatStartPitchCounts,
+      gameDate: gameState.gameDate,
+    }
+  );
 
   players.forEach((player) => {
     const st = stats[player.id];
@@ -216,8 +247,18 @@ export function validateGameRules(gameState) {
       });
     }
 
-    // Hard Rule: 41+ pitches cannot catch
-    if (st.pitchesThrown >= NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD) {
+    // Hard Rule: Daily Pitch Limit Exceeded
+    if (st.dailyMaxViolation) {
+      hardViolations.push({
+        playerId: player.id,
+        playerName: player.name,
+        type: 'DAILY_PITCH_MAX_EXCEEDED',
+        message: `${player.name} (Age ${st.age}) threw ${st.pitchesThrown} pitches, exceeding their Little League daily maximum limit of ${st.maxPitches} pitches.`,
+      });
+    }
+
+    // Hard Rule: 41+ pitches cannot catch (unless threshold exception at 40 pitches applies)
+    if (st.pitchesThrown >= NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD && !st.restDetails?.catcherThresholdExceptionApplies) {
       const catches = [];
       innings.forEach((inn, idx) => {
         if (inn.assignments && inn.assignments.C === player.id) {
@@ -283,20 +324,61 @@ export function validateGameRules(gameState) {
     }
   });
 
-  // Pitch count live alerts
+  // Pitch count live alerts & Little League workload monitoring
   const activePitcherId = gameState.activePitcherId;
   if (activePitcherId && playerPitches?.[activePitcherId] !== undefined) {
     const pitches = playerPitches[activePitcherId];
-    const pitcherObj = players.find(p => p.id === activePitcherId);
+    const pitcherObj = players.find((p) => p.id === activePitcherId);
     const pName = pitcherObj ? pitcherObj.name : 'Active Pitcher';
+    const pAge = Number(pitcherObj?.age) || 10;
+    const pMax = getMaxPitchesForAge(pAge);
+    const atBatStart = gameState.atBatStartPitchCounts?.[activePitcherId] ?? null;
+    const restDetails = calculatePitchRestDetails(pitches, pAge, atBatStart, gameState.gameDate);
 
-    if (pitches >= NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD) {
+    // 1. Daily limit alerts
+    if (pitches >= pMax) {
       urgentAlerts.push({
         playerId: activePitcherId,
         playerName: pName,
-        type: 'PITCH_COUNT_CATCHER_CAP',
-        message: `Threshold Cap: ${pName} has thrown ${pitches} pitches. Ineligible to play Catcher for remainder of game.`,
+        type: 'DAILY_PITCH_MAX_REACHED',
+        message: `🚨 Little League Daily Max: ${pName} (Age ${pAge}) reached ${pitches}/${pMax} pitches! Must be removed from the mound${restDetails.dailyMaxThresholdExceptionApplies ? ' after this batter (Threshold Rule)' : ' immediately'}. Required Rest: ${restDetails.restDays} Calendar Days.`,
       });
+    } else if (pMax - pitches <= 5) {
+      urgentAlerts.push({
+        playerId: activePitcherId,
+        playerName: pName,
+        type: 'DAILY_PITCH_MAX_WARNING',
+        message: `⚠️ Approaching Daily Limit: ${pName} has thrown ${pitches}/${pMax} pitches (${pMax - pitches} pitches remaining for Age ${pAge}).`,
+      });
+    }
+
+    // 2. Threshold Exception Live Notification
+    if (restDetails.thresholdExceptionActive) {
+      softWarnings.push({
+        playerId: activePitcherId,
+        playerName: pName,
+        type: 'THRESHOLD_EXCEPTION_ACTIVE',
+        message: `⚡ Threshold Exception Active: ${pName} started this batter at ${restDetails.thresholdStartPitches} pitches (currently ${pitches}). If removed before facing next batter, rest is charged at ${restDetails.thresholdStartPitches} pitches (${restDetails.effectiveRestDaysText}).`,
+      });
+    }
+
+    // 3. Catcher Barrier Alert (41 Pitches)
+    if (pitches >= NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD) {
+      if (restDetails.catcherThresholdExceptionApplies) {
+        softWarnings.push({
+          playerId: activePitcherId,
+          playerName: pName,
+          type: 'PITCH_COUNT_CATCHER_THRESHOLD_EXCEPTION',
+          message: `⚠️ Catcher Threshold Exception: ${pName} started batter at ${restDetails.thresholdStartPitches} pitches (<= 40) and has ${pitches} pitches. Eligible to catch only if removed before facing next batter!`,
+        });
+      } else {
+        urgentAlerts.push({
+          playerId: activePitcherId,
+          playerName: pName,
+          type: 'PITCH_COUNT_CATCHER_CAP',
+          message: `Threshold Cap: ${pName} has thrown ${pitches} pitches (>= 41). Ineligible to play Catcher for remainder of game.`,
+        });
+      }
     } else if (pitches >= NNLL_RULES.PITCH_WARNING_THRESHOLD) {
       urgentAlerts.push({
         playerId: activePitcherId,

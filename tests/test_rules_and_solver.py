@@ -20,9 +20,8 @@ def is_assignment_valid(player, position, inning_num, histories, player_pitches=
     
     # Safety tags
     el = player.get('eligiblePositions', {})
-    if position == 'P' and not el.get('canPitch', True): return False
-    if position == 'C' and not el.get('canCatch', True): return False
-    if position == '1B' and not el.get('canPlayFirstBase', True): return False
+    if position == 'P' and not (player.get('canPitch', True) and el.get('canPitch', True)): return False
+    if position == 'C' and not (player.get('canCatch', True) and el.get('canCatch', True)): return False
     
     # Pitcher/Catcher
     if position == 'C' and player_pitches.get(p_id, 0) >= 41:
@@ -252,28 +251,28 @@ def validate_nnll_rules(players, innings, player_pitches=None, pitchers_removed=
 
 class TestNNLLOptimizer(unittest.TestCase):
     def test_solve_11_players(self):
-        players = [{'id': f'p{i}', 'name': f'P{i}', 'jerseyNumber': i, 'eligiblePositions': {'canPitch': True, 'canCatch': True, 'canPlayFirstBase': True}} for i in range(1, 12)]
+        players = [{'id': f'p{i}', 'jersey': i, 'jerseyNumber': i, 'firstName': 'Player', 'lastName': f'{i}', 'name': f'P{i}', 'canPitch': True, 'canCatch': True, 'eligiblePositions': {'canPitch': True, 'canCatch': True}} for i in range(1, 12)]
         grid = solve_grid_python(players)
         self.assertEqual(len(grid), 6)
         violations = validate_nnll_rules(players, grid)
         self.assertEqual(violations, [])
 
     def test_solve_12_players(self):
-        players = [{'id': f'p{i}', 'name': f'P{i}', 'jerseyNumber': i, 'eligiblePositions': {'canPitch': True, 'canCatch': True, 'canPlayFirstBase': True}} for i in range(1, 13)]
+        players = [{'id': f'p{i}', 'jersey': i, 'jerseyNumber': i, 'firstName': 'Player', 'lastName': f'{i}', 'name': f'P{i}', 'canPitch': True, 'canCatch': True, 'eligiblePositions': {'canPitch': True, 'canCatch': True}} for i in range(1, 13)]
         grid = solve_grid_python(players)
         self.assertEqual(len(grid), 6)
         violations = validate_nnll_rules(players, grid)
         self.assertEqual(violations, [])
 
     def test_solve_9_players(self):
-        players = [{'id': f'p{i}', 'name': f'P{i}', 'jerseyNumber': i, 'eligiblePositions': {'canPitch': True, 'canCatch': True, 'canPlayFirstBase': True}} for i in range(1, 10)]
+        players = [{'id': f'p{i}', 'jersey': i, 'jerseyNumber': i, 'firstName': 'Player', 'lastName': f'{i}', 'name': f'P{i}', 'canPitch': True, 'canCatch': True, 'eligiblePositions': {'canPitch': True, 'canCatch': True}} for i in range(1, 10)]
         grid = solve_grid_python(players)
         self.assertEqual(len(grid), 6)
         violations = validate_nnll_rules(players, grid)
         self.assertEqual(violations, [])
 
     def test_solve_8_players(self):
-        players = [{'id': f'p{i}', 'name': f'P{i}', 'jerseyNumber': i, 'eligiblePositions': {'canPitch': True, 'canCatch': True, 'canPlayFirstBase': True}} for i in range(1, 9)]
+        players = [{'id': f'p{i}', 'jersey': i, 'jerseyNumber': i, 'firstName': 'Player', 'lastName': f'{i}', 'name': f'P{i}', 'canPitch': True, 'canCatch': True, 'eligiblePositions': {'canPitch': True, 'canCatch': True}} for i in range(1, 9)]
         grid = solve_grid_python(players)
         self.assertEqual(len(grid), 6)
         violations = validate_nnll_rules(players, grid)
@@ -281,7 +280,7 @@ class TestNNLLOptimizer(unittest.TestCase):
 
     def test_dynamic_resolve_after_41_pitches(self):
         """When pitcher reaches 41 pitches, downstream re-solve cannot place them at catcher"""
-        players = [{'id': f'p{i}', 'name': f'P{i}', 'jerseyNumber': i, 'eligiblePositions': {'canPitch': True, 'canCatch': True, 'canPlayFirstBase': True}} for i in range(1, 12)]
+        players = [{'id': f'p{i}', 'jersey': i, 'jerseyNumber': i, 'name': f'P{i}', 'canPitch': True, 'canCatch': True, 'eligiblePositions': {'canPitch': True, 'canCatch': True}} for i in range(1, 12)]
         initial_grid = solve_grid_python(players)
         # Lock innings 1 and 2
         locked = initial_grid[:2]
@@ -295,7 +294,7 @@ class TestNNLLOptimizer(unittest.TestCase):
 
     def test_dynamic_resolve_after_injury(self):
         """When a player is injured in Inning 2, downstream innings rebalance cleanly"""
-        players = [{'id': f'p{i}', 'name': f'P{i}', 'jerseyNumber': i, 'eligiblePositions': {'canPitch': True, 'canCatch': True, 'canPlayFirstBase': True}} for i in range(1, 12)]
+        players = [{'id': f'p{i}', 'jersey': i, 'jerseyNumber': i, 'name': f'P{i}', 'canPitch': True, 'canCatch': True, 'eligiblePositions': {'canPitch': True, 'canCatch': True}} for i in range(1, 12)]
         initial_grid = solve_grid_python(players)
         locked = initial_grid[:2]
         
@@ -307,6 +306,51 @@ class TestNNLLOptimizer(unittest.TestCase):
         # Verify no violations on remaining active players
         violations = validate_nnll_rules(players, resolv_grid)
         self.assertEqual(violations, [])
+
+    def test_player_schema_and_tuple_editing(self):
+        """Verify schema fields: jersey, Player First Name, Player Last name, Can Pitch flag, can catch flag, and editing tuples"""
+        player_tuple = {
+            'id': 'p_101',
+            'jersey': 44,
+            'jerseyNumber': 44,
+            'firstName': 'Aaron',
+            'lastName': 'Judge',
+            'name': 'Aaron Judge',
+            'age': 10,
+            'Player Age': 10,
+            'Player First Name': 'Aaron',
+            'Player Last name': 'Judge',
+            'Can Pitch flag': False,
+            'can catch flag': False,
+            'canPitch': False,
+            'canCatch': False,
+            'eligiblePositions': {'canPitch': False, 'canCatch': False}
+        }
+        self.assertEqual(player_tuple['jersey'], 44)
+        self.assertEqual(player_tuple['age'], 10)
+        self.assertEqual(player_tuple['Player Age'], 10)
+        self.assertEqual(player_tuple['Player First Name'], 'Aaron')
+        self.assertEqual(player_tuple['Player Last name'], 'Judge')
+        self.assertFalse(player_tuple['Can Pitch flag'])
+        self.assertFalse(player_tuple['can catch flag'])
+        self.assertNotIn('canPlayFirstBase', player_tuple['eligiblePositions'])
+
+        # Simulate editing tuple after input (e.g. changing jersey, age, and position eligibility)
+        player_tuple['jersey'] = 99
+        player_tuple['jerseyNumber'] = 99
+        player_tuple['firstName'] = 'Aaron'
+        player_tuple['lastName'] = 'Judge Jr.'
+        player_tuple['name'] = 'Aaron Judge Jr.'
+        player_tuple['age'] = 11
+        player_tuple['Player Age'] = 11
+        player_tuple['canPitch'] = True
+        player_tuple['Can Pitch flag'] = True
+        player_tuple['eligiblePositions']['canPitch'] = True
+
+        self.assertEqual(player_tuple['jersey'], 99)
+        self.assertEqual(player_tuple['lastName'], 'Judge Jr.')
+        self.assertEqual(player_tuple['age'], 11)
+        self.assertTrue(player_tuple['canPitch'])
 
 if __name__ == '__main__':
     unittest.main()

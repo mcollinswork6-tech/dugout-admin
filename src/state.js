@@ -5,8 +5,65 @@
 import { solveDefensiveGrid } from './solver.js';
 import { validateGameRules, calculatePlayerStats } from './rules.js';
 import { saveGame } from './storage.js';
-import { NNLL_RULES } from './constants.js';
+import { NNLL_RULES, LITTLE_LEAGUE_PITCH_RULES, getMaxPitchesForAge, calculatePitchRestDetails } from './constants.js';
 import { SAMPLE_TEAMS } from './sample-data.js';
+
+export function normalizePlayer(p) {
+  if (!p) return p;
+  const rawJersey = p.jersey !== undefined ? p.jersey : (p.jerseyNumber !== undefined ? p.jerseyNumber : p['Jersey']);
+  const jersey = parseInt(rawJersey, 10) || 0;
+  
+  let firstName = p.firstName ?? p['Player First Name'] ?? p['first_name'];
+  let lastName = p.lastName ?? p['Player Last name'] ?? p['Player Last Name'] ?? p['last_name'];
+  
+  if (!firstName && !lastName && p.name) {
+    const parts = p.name.trim().split(/\s+/);
+    firstName = parts[0] || '';
+    lastName = parts.slice(1).join(' ') || '';
+  }
+  firstName = (firstName || '').trim();
+  lastName = (lastName || '').trim();
+  const name = (firstName || lastName) ? `${firstName} ${lastName}`.trim() : (p.name || '');
+
+  const canPitch = Boolean(
+    p.canPitch !== undefined ? p.canPitch :
+    (p['Can Pitch flag'] !== undefined ? p['Can Pitch flag'] :
+    (p.eligiblePositions?.canPitch !== undefined ? p.eligiblePositions.canPitch : true))
+  );
+
+  const canCatch = Boolean(
+    p.canCatch !== undefined ? p.canCatch :
+    (p['can catch flag'] !== undefined ? p['can catch flag'] :
+    (p.eligiblePositions?.canCatch !== undefined ? p.eligiblePositions.canCatch : true))
+  );
+
+  const rawAge = p.age !== undefined ? p.age : (p['Player Age'] !== undefined ? p['Player Age'] : p.playerAge);
+  const parsedAge = parseInt(rawAge, 10);
+  const age = (!isNaN(parsedAge) && parsedAge > 0) ? parsedAge : 10;
+
+  return {
+    id: p.id || `p_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    jersey,
+    jerseyNumber: jersey,
+    firstName,
+    lastName,
+    name,
+    age,
+    'Player Age': age,
+    canPitch,
+    canCatch,
+    'Player First Name': firstName,
+    'Player Last name': lastName,
+    'Can Pitch flag': canPitch,
+    'can catch flag': canCatch,
+    eligiblePositions: {
+      canPitch,
+      canCatch,
+    },
+    ...(p.isOut !== undefined ? { isOut: p.isOut } : {}),
+    ...(p.outReason !== undefined ? { outReason: p.outReason } : {}),
+  };
+}
 
 export function getFallbackOpponentPlayers(opponentName) {
   if (opponentName) {
@@ -16,14 +73,18 @@ export function getFallbackOpponentPlayers(opponentName) {
       return tLower.includes(oppLower) || oppLower.includes(tLower.split(' ')[0]);
     });
     if (matched && matched.players && matched.players.length > 0) {
-      return JSON.parse(JSON.stringify(matched.players));
+      return matched.players.map((p) => normalizePlayer(p));
     }
   }
-  return Array.from({ length: 9 }, (_, i) => ({
+  return Array.from({ length: 9 }, (_, i) => normalizePlayer({
     id: `opp_p_${i + 1}`,
-    name: `Opponent Batter ${i + 1}`,
+    jersey: i + 1,
     jerseyNumber: i + 1,
-    eligiblePositions: { canPitch: true, canCatch: true, canPlayFirstBase: true },
+    firstName: 'Opponent',
+    lastName: `Batter ${i + 1}`,
+    name: `Opponent Batter ${i + 1}`,
+    canPitch: true,
+    canCatch: true,
   }));
 }
 
@@ -89,6 +150,8 @@ export class GameStateManager {
       pitcherRemovalInning: {}, // playerId -> inning number when removed
       pitchHistory: [], // Array of { timestamp, pitcherId, delta, previousCount, newCount }
       playerPitches: {}, // playerId -> count
+      atBatStartPitchCounts: {}, // pitcherId -> pitch count at start of current plate appearance
+      gameDate: new Date().toISOString().split('T')[0], // YYYY-MM-DD for Little League calendar rest calculation
       pitchersRemoved: [],
       players: [],
       innings: [],
@@ -156,7 +219,7 @@ export class GameStateManager {
     this.state.teamName = teamName || 'NNLL River Cats';
     this.state.opponentName = opponentName || 'Opponents';
     this.state.isHomeTeam = isHomeTeam !== undefined ? isHomeTeam : true;
-    this.state.players = JSON.parse(JSON.stringify(players));
+    this.state.players = (players || []).map((p) => normalizePlayer(p));
 
     // Continuous Batting Order (CBO)
     this.state.battingOrder = battingOrder
@@ -371,6 +434,14 @@ export class GameStateManager {
     const newCount = Math.max(0, prevCount + delta);
     this.state.playerPitches[pitcherId] = newCount;
 
+    if (!this.state.atBatStartPitchCounts) this.state.atBatStartPitchCounts = {};
+    if (this.state.atBatStartPitchCounts[pitcherId] === undefined) {
+      this.state.atBatStartPitchCounts[pitcherId] = prevCount;
+    }
+    if (newCount < this.state.atBatStartPitchCounts[pitcherId]) {
+      this.state.atBatStartPitchCounts[pitcherId] = newCount;
+    }
+
     this.state.pitchHistory.push({
       timestamp: Date.now(),
       pitcherId,
@@ -467,6 +538,46 @@ export class GameStateManager {
     return { isStrikeout, pitchCount: newCount, balls: newBalls, strikes: finalStrikes };
   }
 
+  walkCurrentBatter(reason = 'walk') {
+    const { isMyTeamBatting } = this.getBattingContext();
+    const order = isMyTeamBatting ? (this.state.battingOrder || []) : this.getOpponentBattingOrder();
+    const idx = isMyTeamBatting ? (this.state.currentBatterIndex || 0) : (this.state.opponentBatterIndex || 0);
+    const batterId = order.length > 0 ? order[idx % order.length] : null;
+
+    if (!this.state.runnersOnBase) {
+      this.state.runnersOnBase = { '1B': null, '2B': null, '3B': null };
+    }
+
+    const teamKey = isMyTeamBatting ? (this.state.isHomeTeam ? 'home' : 'opponent') : (this.state.isHomeTeam ? 'opponent' : 'home');
+    const r1 = this.state.runnersOnBase['1B'];
+    const r2 = this.state.runnersOnBase['2B'];
+    const r3 = this.state.runnersOnBase['3B'];
+
+    let runScored = false;
+    // Walk force progression: forced runners advance
+    if (r1) {
+      if (r2) {
+        if (r3) {
+          // Bases loaded: runner on 3B is forced home to HP (+1 Run)
+          runScored = true;
+          this.recordRun(teamKey, 1);
+        }
+        this.state.runnersOnBase['3B'] = r2;
+      }
+      this.state.runnersOnBase['2B'] = r1;
+    }
+    this.state.runnersOnBase['1B'] = batterId;
+
+    // Reset batter count
+    this.state.currentBalls = 0;
+    this.state.currentStrikes = 0;
+
+    // Continuous batting: advance to next batter
+    this.advanceBatter(1);
+    this.notify();
+    return { batterId, runScored };
+  }
+
   recordPitchBall() {
     const pitcherId = this.state.activePitcherId;
     if (!pitcherId) return { error: 'No active pitcher' };
@@ -506,11 +617,105 @@ export class GameStateManager {
     });
 
     if (isWalk) {
-      this.advanceBatter(1);
+      this.walkCurrentBatter('walk');
+    } else {
+      this.notify();
     }
 
-    this.notify();
     return { isWalk, pitchCount: newCount, balls: finalBalls, strikes: finalStrikes };
+  }
+
+  recordPitchHitBatter() {
+    const pitcherId = this.state.activePitcherId;
+    if (!pitcherId) return { error: 'No active pitcher' };
+
+    this.saveSnapshot();
+    const prevCount = this.state.playerPitches[pitcherId] || 0;
+    const newCount = prevCount + 1;
+    this.state.playerPitches[pitcherId] = newCount;
+
+    const prevBalls = this.state.currentBalls || 0;
+    const prevStrikes = this.state.currentStrikes || 0;
+
+    this.state.currentBalls = 0;
+    this.state.currentStrikes = 0;
+
+    this.state.pitchHistory.push({
+      timestamp: Date.now(),
+      pitcherId,
+      delta: 1,
+      type: 'hit_batter',
+      previousCount: prevCount,
+      newCount,
+      previousBalls: prevBalls,
+      previousStrikes: prevStrikes,
+      isWalk: true,
+      isHBP: true,
+    });
+
+    const result = this.walkCurrentBatter('hbp');
+    return { isHBP: true, pitchCount: newCount, ...result };
+  }
+
+  recordSafeHit(hitType) {
+    this.saveSnapshot();
+    const { isMyTeamBatting } = this.getBattingContext();
+    const order = isMyTeamBatting ? (this.state.battingOrder || []) : this.getOpponentBattingOrder();
+    const idx = isMyTeamBatting ? (this.state.currentBatterIndex || 0) : (this.state.opponentBatterIndex || 0);
+    const batterId = order.length > 0 ? order[idx % order.length] : null;
+
+    if (!this.state.runnersOnBase) {
+      this.state.runnersOnBase = { '1B': null, '2B': null, '3B': null };
+    }
+
+    const teamKey = isMyTeamBatting ? (this.state.isHomeTeam ? 'home' : 'opponent') : (this.state.isHomeTeam ? 'opponent' : 'home');
+    const r1 = this.state.runnersOnBase['1B'];
+    const r2 = this.state.runnersOnBase['2B'];
+    const r3 = this.state.runnersOnBase['3B'];
+
+    let runsScored = 0;
+
+    if (hitType === 'HR') {
+      // Home Run: all runners on base score + batter scores at HP
+      const runnersCount = (r1 ? 1 : 0) + (r2 ? 1 : 0) + (r3 ? 1 : 0) + 1;
+      runsScored = runnersCount;
+      this.recordRun(teamKey, runsScored);
+      this.state.runnersOnBase = { '1B': null, '2B': null, '3B': null };
+    } else if (hitType === '3B') {
+      // Triple: all runners on base score at HP
+      const runnersCount = (r1 ? 1 : 0) + (r2 ? 1 : 0) + (r3 ? 1 : 0);
+      if (runnersCount > 0) {
+        runsScored = runnersCount;
+        this.recordRun(teamKey, runsScored);
+      }
+      this.state.runnersOnBase = { '1B': null, '2B': null, '3B': batterId };
+    } else if (hitType === '2B') {
+      // Double: 3B & 2B score at HP, 1B advances to 3B, batter on 2B
+      if (r3) runsScored++;
+      if (r2) runsScored++;
+      if (runsScored > 0) this.recordRun(teamKey, runsScored);
+      this.state.runnersOnBase = { '1B': null, '2B': batterId, '3B': r1 || null };
+    } else if (hitType === '1B' || hitType === 'FC') {
+      // Single / Error / FC: 3B scores at HP, 2B to 3B, 1B to 2B, batter on 1B
+      if (r3) {
+        runsScored++;
+        this.recordRun(teamKey, 1);
+      }
+      this.state.runnersOnBase = {
+        '1B': batterId,
+        '2B': r1 || null,
+        '3B': r2 || null,
+      };
+    }
+
+    // Reset batter count
+    this.state.currentBalls = 0;
+    this.state.currentStrikes = 0;
+
+    // Continuous batting: advance to next batter
+    this.advanceBatter(1);
+    this.notify();
+    return { runsScored };
   }
 
   recordPitchInPlay() {
@@ -576,6 +781,11 @@ export class GameStateManager {
     this.saveSnapshot();
     this.state.currentBalls = 0;
     this.state.currentStrikes = 0;
+    const pId = this.state.activePitcherId;
+    if (pId) {
+      if (!this.state.atBatStartPitchCounts) this.state.atBatStartPitchCounts = {};
+      this.state.atBatStartPitchCounts[pId] = this.state.playerPitches[pId] || 0;
+    }
     this.notify();
   }
 
@@ -614,11 +824,30 @@ export class GameStateManager {
     }
 
     this.state.activePitcherId = newPitcherId;
+    if (!this.state.atBatStartPitchCounts) this.state.atBatStartPitchCounts = {};
+    if (newPitcherId && this.state.atBatStartPitchCounts[newPitcherId] === undefined) {
+      this.state.atBatStartPitchCounts[newPitcherId] = this.state.playerPitches[newPitcherId] || 0;
+    }
     const curInning = this.state.innings[this.state.currentInning - 1];
     if (curInning) {
       curInning.assignments.P = newPitcherId;
     }
     this.notify();
+  }
+
+  /**
+   * Retrieves Little League Regulation VI pitch limits & rest details for a pitcher
+   * @param {string|null} pitcherId - Player ID (defaults to activePitcherId)
+   * @returns {Object|null} Workload and rest day analysis
+   */
+  getPitcherRestDetails(pitcherId = null) {
+    const pId = pitcherId || this.state.activePitcherId;
+    if (!pId) return null;
+    const player = this.state.players.find((p) => p.id === pId);
+    const pitches = this.state.playerPitches[pId] || 0;
+    const age = Number(player?.age) || 10;
+    const atBatStart = this.state.atBatStartPitchCounts?.[pId] ?? null;
+    return calculatePitchRestDetails(pitches, age, atBatStart, this.state.gameDate);
   }
 
   /**
@@ -873,6 +1102,16 @@ export class GameStateManager {
       const cur = this.state.opponentBatterIndex || 0;
       this.state.opponentBatterIndex = (cur + delta + len) % len;
     }
+
+    // Reset batter count & record pitch count at start of next batter's plate appearance
+    this.state.currentBalls = 0;
+    this.state.currentStrikes = 0;
+    const activePitcher = this.state.activePitcherId;
+    if (activePitcher) {
+      if (!this.state.atBatStartPitchCounts) this.state.atBatStartPitchCounts = {};
+      this.state.atBatStartPitchCounts[activePitcher] = this.state.playerPitches[activePitcher] || 0;
+    }
+
     this.notify();
   }
 

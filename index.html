@@ -6,17 +6,27 @@
   <title>NNLL Minor AAA Dugout & Lineup Optimizer</title>
   <meta name="description" content="Offline-first dugout management and defensive rotation optimizer for North Natomas Little League Minor AAA baseball with Firebase Authentication.">
   <meta name="theme-color" content="#0f172a">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="application-name" content="Dugout Admin">
 
-  <!-- Application Icon & Favicon -->
-  <link rel="icon" type="image/jpeg" href="icon.jpeg">
+  <!-- iOS Safari PWA Standalone Configuration -->
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Dugout Admin">
+  <link rel="apple-touch-icon" sizes="180x180" href="apple-touch-icon.png">
   <link rel="apple-touch-icon" href="icon.jpeg">
+
+  <!-- Web App Manifest & Favicons -->
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+  <link rel="icon" type="image/jpeg" href="icon.jpeg">
 
   <!-- Google Fonts: Inter & Outfit -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com">
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Outfit:wght@600;700;800&display=swap" rel="stylesheet" crossorigin="anonymous">
 
-  <link rel="stylesheet" href="css/styles.css?v=cbo-dual-3.9">
+  <link rel="stylesheet" href="css/styles.css?v=unified-scorecard-6.4">
 
   <!-- Firebase Modular SDK Import Map for native browser ES modules -->
   <script type="importmap">
@@ -46,6 +56,24 @@
   <!-- Modal Portal Root -->
   <div id="modal-container"></div>
 
-  <script type="module" src="src/app.js?v=outs-base-4.0"></script>
+  <script type="module" src="src/app.js?v=roster-age-4.5"></script>
+
+  <!-- PWA Service Worker Registration -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js')
+          .then((reg) => console.log('⚾ Dugout Admin PWA Service Worker registered:', reg.scope))
+          .catch((err) => console.warn('PWA SW registration note:', err));
+      });
+    }
+
+    // Capture PWA beforeinstallprompt event for Android/Chrome install button
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      window.deferredPWAInstallPrompt = e;
+      window.dispatchEvent(new CustomEvent('pwa-installable'));
+    });
+  </script>
 </body>
 </html>

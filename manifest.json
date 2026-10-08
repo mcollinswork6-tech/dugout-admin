@@ -1,0 +1,55 @@
+{
+  "name": "Dugout Admin — NNLL Minor AAA",
+  "short_name": "Dugout Admin",
+  "description": "Coaches & Managers Lineup, Defensive Rotation & Game Tracker Optimizer",
+  "id": "com.dugoutadmin.app",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "any",
+  "background_color": "#0a1120",
+  "theme_color": "#0f172a",
+  "icons": [
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon.jpeg",
+      "sizes": "1024x1024",
+      "type": "image/jpeg",
+      "purpose": "any"
+    }
+  ],
+  "categories": ["sports", "productivity", "utilities"],
+  "shortcuts": [
+    {
+      "name": "Game Tracker",
+      "short_name": "Game Tracker",
+      "description": "Open live game tracker layout",
+      "url": "./index.html?mode=game",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    },
+    {
+      "name": "Planning Matrix",
+      "short_name": "Planning",
+      "description": "Open 6-inning defensive rotation matrix",
+      "url": "./index.html?mode=planning",
+      "icons": [{ "src": "icon-192.png", "sizes": "192x192" }]
+    }
+  ]
+}

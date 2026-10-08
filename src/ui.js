@@ -8,6 +8,10 @@ import {
   OUTFIELD_POSITIONS,
   POSITION_NAMES,
   NNLL_RULES,
+  LITTLE_LEAGUE_PITCH_RULES,
+  getMaxPitchesForAge,
+  calculatePitchRestDetails,
+  getRestTier,
   isSuperAdmin,
 } from './constants.js';
 import { TeamManagerUI } from './team-manager-ui.js';
@@ -46,9 +50,18 @@ export function getFallbackOpponentRoster(state) {
   }
   return Array.from({ length: 9 }, (_, i) => ({
     id: `opp_p_${i + 1}`,
-    name: `Opponent Batter ${i + 1}`,
+    jersey: i + 1,
     jerseyNumber: i + 1,
-    eligiblePositions: { canPitch: true, canCatch: true, canPlayFirstBase: true },
+    firstName: 'Opponent',
+    lastName: `Batter ${i + 1}`,
+    name: `Opponent Batter ${i + 1}`,
+    canPitch: true,
+    canCatch: true,
+    'Player First Name': 'Opponent',
+    'Player Last name': `Batter ${i + 1}`,
+    'Can Pitch flag': true,
+    'can catch flag': true,
+    eligiblePositions: { canPitch: true, canCatch: true },
   }));
 }
 
@@ -154,15 +167,10 @@ export class DugoutUI {
             ${isSuper ? `
               <button id="btn-header-invites" class="btn btn-secondary btn-sm" style="border-color: rgba(168, 85, 247, 0.5); color: #e9d5ff;" title="Invite coaches, managers, and scorekeepers">✉️ User Invites</button>
             ` : ''}
-            ${this.appViewMode === 'planning' ? `
-              <button id="btn-lineup-modal" class="btn btn-secondary btn-sm" title="${isOpponentView ? 'View opponent lineup and roster' : 'Reorder batting lineup & set attendance'}">📋 ${isOpponentView ? 'Opponent Lineup' : 'Lineup & Attendance'}</button>
-              <button id="btn-teams-manager" class="btn btn-secondary btn-sm" title="Manage teams, rosters, and cumulative season stats">👥 Teams & Stats</button>
-              <button id="btn-new-game" class="btn btn-secondary btn-sm">⚙ New Game</button>
-              <button id="btn-print-card" class="btn btn-primary btn-sm">🖨 Printable Lineup Card</button>
-            ` : `
-              <button id="btn-teams-manager" class="btn btn-secondary btn-sm" title="Manage teams, rosters, and cumulative season stats">👥 Teams & Stats</button>
-              <button id="btn-new-game" class="btn btn-secondary btn-sm">⚙ New Game</button>
-            `}
+            <button id="btn-lineup-modal" class="btn btn-secondary btn-sm" title="${isOpponentView ? 'View opponent lineup and roster' : 'Reorder batting lineup & set attendance'}">📋 ${isOpponentView ? 'Opponent Lineup' : 'Lineup & Attendance'}</button>
+            <button id="btn-teams-manager" class="btn btn-secondary btn-sm" title="Manage teams, rosters, and cumulative season stats">👥 Teams & Stats</button>
+            <button id="btn-new-game" class="btn btn-secondary btn-sm">⚙ New Game</button>
+            <button id="btn-print-card" class="btn btn-primary btn-sm">🖨 Printable Lineup Card</button>
           </div>
         </div>
       </header>
@@ -284,28 +292,38 @@ export class DugoutUI {
 
     return `
       <div class="game-view-container ${this.gameLayoutTab === 'lineup' ? 'tab-lineup-active' : 'tab-tracker-active'}">
+        <!-- Top Subview Navigation Strip (Consistent with Mobile Nav & Desktop Tab Bar) -->
+        <nav class="game-subnav-strip" aria-label="Game Layout Subviews">
+          <button id="btn-subnav-lineup" class="game-subnav-btn ${this.gameLayoutTab === 'lineup' ? 'active' : ''}" title="View and adjust continuous batting order and field defensive assignments">
+            <span class="subnav-icon">📋</span>
+            <span class="subnav-label">Line-Up & Field</span>
+            <span class="subnav-pill">Inning ${this.gameLineupInning}</span>
+          </button>
+          <button id="btn-subnav-tracker" class="game-subnav-btn ${this.gameLayoutTab === 'tracker' ? 'active' : ''}" title="Live game tracker: Outs, runs scoreboard, and pitch count">
+            <span class="subnav-icon">⚾</span>
+            <span class="subnav-label">Game Tracker</span>
+            <span class="subnav-pill">${isTop ? 'TOP' : 'BOT'} ${curInning} • ${awayScore}-${homeScore}</span>
+          </button>
+        </nav>
+
         <!-- Subview: Line-Up vs Game Tracker -->
         ${this.gameLayoutTab === 'lineup'
           ? this.renderGameLineupSubView(state, validation)
           : this.renderGameTrackerSubView(state, validation)}
 
-        <!-- Bottom Task Bar of Buttons -->
+        <!-- Bottom Task Bar of Buttons (Matches Mobile-Enabled Views) -->
         <nav class="game-bottom-taskbar" id="game-bottom-taskbar" aria-label="Game Navigation Bar">
-          <button id="btn-taskbar-lineup" class="taskbar-btn ${this.gameLayoutTab === 'lineup' ? 'active' : ''}">
-            <span class="taskbar-icon">📋</span>
-            <div class="taskbar-text-group">
+          <div class="taskbar-btn-group">
+            <button id="btn-taskbar-lineup" class="taskbar-btn ${this.gameLayoutTab === 'lineup' ? 'active' : ''}" type="button">
+              <span class="taskbar-icon">📋</span>
               <span class="taskbar-label">Line-Up</span>
-              <span class="taskbar-sub">Inning ${this.gameLineupInning} Positions</span>
-            </div>
-          </button>
-          
-          <button id="btn-taskbar-tracker" class="taskbar-btn ${this.gameLayoutTab === 'tracker' ? 'active' : ''}">
-            <span class="taskbar-icon">⚾</span>
-            <div class="taskbar-text-group">
+            </button>
+            
+            <button id="btn-taskbar-tracker" class="taskbar-btn ${this.gameLayoutTab === 'tracker' ? 'active' : ''}" type="button">
+              <span class="taskbar-icon">⚾</span>
               <span class="taskbar-label">Game Tracker</span>
-              <span class="taskbar-sub">Outs, Score & Pitches</span>
-            </div>
-          </button>
+            </button>
+          </div>
 
           <!-- Quick Game Status Pill in Taskbar -->
           <div class="taskbar-status-chip" title="Current Inning, Score, Outs and Count">
@@ -429,9 +447,8 @@ export class DugoutUI {
                 const isPitcher = pos === 'P';
                 const isCatcher = pos === 'C';
                 const isBench = pos === 'BENCH';
-                const canPitch = p.eligiblePositions?.canPitch;
-                const canCatch = p.eligiblePositions?.canCatch;
-                const can1B = p.eligiblePositions?.canPlayFirstBase;
+                const canPitch = p.canPitch ?? p.eligiblePositions?.canPitch;
+                const canCatch = p.canCatch ?? p.eligiblePositions?.canCatch;
 
                 const pitchesThrown = state.playerPitches[p.id] || 0;
                 const hit41Pitches = pitchesThrown >= 41;
@@ -456,13 +473,12 @@ export class DugoutUI {
                     <div class="player-info-cell">
                       <div class="player-name-row">
                         <span class="player-jersey">#${p.jerseyNumber}</span>
-                        <strong class="player-name">${p.name}</strong>
+                        <strong class="player-name">${p.name}${p.age ? ` <span class="player-age-sub" style="font-size: 0.75rem; color: #94a3b8; font-weight: 500;">(Age ${p.age})</span>` : ''}</strong>
                         ${p.isOut ? '<span class="badge-player-out">ABSENT / OUT</span>' : ''}
                       </div>
                       <div class="player-tags-row">
                         ${canPitch ? '<span class="tag-elig tag-p" title="Eligible to Pitch">P</span>' : ''}
                         ${canCatch ? '<span class="tag-elig tag-c" title="Eligible to Catch">C</span>' : ''}
-                        ${can1B ? '<span class="tag-elig tag-1b" title="Eligible for 1B">1B</span>' : ''}
                         ${pitchesThrown > 0 ? `<span class="tag-pitches">${pitchesThrown} pitches</span>` : ''}
                       </div>
                       ${warningMsg ? `<div class="player-warning-sub">${warningMsg}</div>` : ''}
@@ -641,25 +657,45 @@ export class DugoutUI {
     const isTop = state.currentHalf === 'TOP';
     const isBottom = !isTop;
 
+    // Batting Context: Determine which team is batting and which is fielding
+    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
+      ? this.stateManager.getBattingContext()
+      : getBattingContextFromState(state);
+    const { isMyTeamBatting, isOpponentBatting, battingTeamName, fieldingTeamName } = battingContext;
+
+    const isBattingAway = isTop;
+    const battingTeamTag = isBattingAway ? 'AWAY' : 'HOME';
+    const battingScore = isBattingAway ? awayScore : homeScore;
+
+    const fieldingTeamTag = isBattingAway ? 'HOME' : 'AWAY';
+    const fieldingScore = isBattingAway ? homeScore : awayScore;
+
+    const battingPlusId = isBattingAway ? 'btn-run-away-plus' : 'btn-run-home-plus';
+    const battingMinusId = isBattingAway ? 'btn-run-away-minus' : 'btn-run-home-minus';
+    const fieldingPlusId = isBattingAway ? 'btn-run-home-plus' : 'btn-run-away-plus';
+    const fieldingMinusId = isBattingAway ? 'btn-run-home-minus' : 'btn-run-away-minus';
+
     const innRunsObj = (runsState.innings && runsState.innings[curInning]) || { top: 0, bottom: 0 };
     const curHalfRuns = isTop ? (innRunsObj.top || 0) : (innRunsObj.bottom || 0);
     const is5RunCap = curHalfRuns >= 5 && curInning < 6;
 
-    // Active pitcher
+    // Active pitcher & Little League Workload details
     const pitcherId = state.activePitcherId;
     const pitcherPlayer = state.players.find((p) => p.id === pitcherId);
-    const pitcherName = pitcherPlayer ? `${pitcherPlayer.name} (#${pitcherPlayer.jerseyNumber})` : 'None Selected';
+    const pitcherJersey = pitcherPlayer?.jerseyNumber ?? pitcherPlayer?.jersey ?? '';
+    const pitcherAge = Number(pitcherPlayer?.age) || 10;
+    const pitcherName = pitcherPlayer ? `${pitcherPlayer.name}${pitcherJersey ? ` (#${pitcherJersey})` : ''}` : 'None Selected';
     const currentPitches = pitcherId ? state.playerPitches[pitcherId] || 0 : 0;
+    const atBatStartPitches = pitcherId ? (state.atBatStartPitchCounts?.[pitcherId] ?? null) : null;
+
+    // Little League Regulation VI Rest & Workload metrics
+    const pitchWorkload = calculatePitchRestDetails(currentPitches, pitcherAge, atBatStartPitches, state.gameDate);
+    const maxPitches = pitchWorkload.maxPitches;
     const isPitchWarning = currentPitches >= NNLL_RULES.PITCH_WARNING_THRESHOLD && currentPitches < NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD;
     const isPitchDanger = currentPitches >= NNLL_RULES.PITCHER_CATCHER_PITCH_THRESHOLD;
-    const fillPercent = Math.min(100, Math.round((currentPitches / 85) * 100));
-
-    // Little League Rest Days calculation
-    let restDaysText = '0 Days (Eligible tomorrow)';
-    if (currentPitches >= 66) restDaysText = '4 Calendar Days Rest';
-    else if (currentPitches >= 51) restDaysText = '3 Calendar Days Rest';
-    else if (currentPitches >= 36) restDaysText = '2 Calendar Days Rest';
-    else if (currentPitches >= 21) restDaysText = '1 Calendar Day Rest';
+    const isDailyMaxHit = pitchWorkload.isDailyMaxReached;
+    const fillPercent = Math.min(100, Math.round((currentPitches / maxPitches) * 100));
+    const restDaysText = `${pitchWorkload.effectiveRestDaysText} (${pitchWorkload.restDays}d)`;
 
     // Outs
     const outs = state.currentOuts || 0;
@@ -668,11 +704,6 @@ export class DugoutUI {
     const balls = state.currentBalls || 0;
     const strikes = state.currentStrikes || 0;
 
-    // Batting Context: Determine which team is batting and which is fielding
-    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
-      ? this.stateManager.getBattingContext()
-      : getBattingContextFromState(state);
-    const { isMyTeamBatting, isOpponentBatting, battingTeamName, fieldingTeamName } = battingContext;
 
     // Batting Carousel / Due Up (Active batting team)
     let activeOrder = [];
@@ -759,42 +790,62 @@ export class DugoutUI {
               <span class="game-card-badge">${isTop ? 'TOP' : 'BOT'} Inn ${curInning}</span>
             </div>
             
-            <div class="scoreboard-main">
-              <!-- Away Team -->
-              <div class="team-score-box ${isTop ? 'at-bat' : ''}">
-                <div class="team-meta">
-                  <div class="team-label-wrap">
-                    <span class="team-name" title="${awayTeamName}">${awayTeamName}</span>
-                    <span class="team-tag">AWAY</span>
-                  </div>
-                  ${isTop ? `<span class="at-bat-pill">⚾ BATTING</span>` : ''}
+            <!-- Combined Unified Score Card (Changes Dynamically by Batting Team) -->
+            <div class="unified-score-card">
+              <!-- Top Matchup Summary Strip -->
+              <div class="matchup-header-strip">
+                <div class="matchup-team-pill ${isTop ? 'active-batting' : ''}">
+                  <span class="team-badge away">AWAY</span>
+                  <span class="matchup-team-name" title="${awayTeamName}">${awayTeamName}</span>
+                  <span class="matchup-team-score">${awayScore}</span>
+                  ${isTop ? '<span class="batting-dot" title="Currently Batting">⚾</span>' : ''}
                 </div>
-                <div class="score-display-wrap">
-                  <span class="score-number">${awayScore}</span>
-                  <div class="score-btn-group">
-                    <button id="btn-run-away-plus" class="btn-score-adjust plus" title="Add 1 Run to Away team">+1</button>
-                    <button id="btn-run-away-minus" class="btn-score-adjust minus" title="Subtract 1 Run from Away team">-1</button>
+                <span class="matchup-vs-pill">vs</span>
+                <div class="matchup-team-pill ${isBottom ? 'active-batting' : ''}">
+                  ${isBottom ? '<span class="batting-dot" title="Currently Batting">⚾</span>' : ''}
+                  <span class="matchup-team-score">${homeScore}</span>
+                  <span class="matchup-team-name" title="${homeTeamName}">${homeTeamName}</span>
+                  <span class="team-badge home">HOME</span>
+                </div>
+              </div>
+
+              <!-- Dynamic Batting Hero Section -->
+              <div class="batting-team-hero">
+                <div class="batting-hero-meta">
+                  <div class="batting-hero-badge">
+                    <span class="hero-live-indicator">⚾ NOW BATTING</span>
+                    <span class="hero-team-tag ${battingTeamTag.toLowerCase()}">${battingTeamTag}</span>
+                  </div>
+                  <div class="hero-team-name" title="${battingTeamName}">${battingTeamName}</div>
+                </div>
+
+                <div class="batting-hero-action-row">
+                  <div class="hero-score-stat">
+                    <span class="hero-score-val">${battingScore}</span>
+                    <span class="hero-score-label">RUNS</span>
+                  </div>
+                  <div class="hero-btn-actions">
+                    <button id="${battingPlusId}" class="btn-hero-run plus" title="Add 1 Run to ${battingTeamName}">
+                      +1 Run
+                    </button>
+                    <button id="${battingMinusId}" class="btn-hero-run minus" title="Subtract 1 Run from ${battingTeamName}">
+                      -1
+                    </button>
                   </div>
                 </div>
               </div>
 
-              <div class="scoreboard-vs">VS</div>
-
-              <!-- Home Team -->
-              <div class="team-score-box ${isBottom ? 'at-bat' : ''}">
-                <div class="team-meta">
-                  <div class="team-label-wrap">
-                    <span class="team-name" title="${homeTeamName}">${homeTeamName}</span>
-                    <span class="team-tag">HOME</span>
-                  </div>
-                  ${isBottom ? `<span class="at-bat-pill">⚾ BATTING</span>` : ''}
+              <!-- Opponent / Defense Secondary Strip -->
+              <div class="fielding-team-strip">
+                <div class="fielding-info-wrap">
+                  <span class="fielding-label">DEFENSE:</span>
+                  <span class="fielding-name" title="${fieldingTeamName}">${fieldingTeamName}</span>
+                  <span class="fielding-side-tag">(${fieldingTeamTag})</span>
+                  <span class="fielding-score-badge">${fieldingScore} runs</span>
                 </div>
-                <div class="score-display-wrap">
-                  <span class="score-number">${homeScore}</span>
-                  <div class="score-btn-group">
-                    <button id="btn-run-home-plus" class="btn-score-adjust plus" title="Add 1 Run to Home team">+1</button>
-                    <button id="btn-run-home-minus" class="btn-score-adjust minus" title="Subtract 1 Run from Home team">-1</button>
-                  </div>
+                <div class="fielding-btn-group">
+                  <button id="${fieldingPlusId}" class="btn-score-adjust plus btn-xs" title="Add 1 Run to ${fieldingTeamName}">+1</button>
+                  <button id="${fieldingMinusId}" class="btn-score-adjust minus btn-xs" title="Subtract 1 Run from ${fieldingTeamName}">-1</button>
                 </div>
               </div>
             </div>
@@ -964,33 +1015,49 @@ export class DugoutUI {
               <div class="pitcher-avatar">⚾</div>
               <div class="pitcher-info">
                 <div class="pitcher-name">${pitcherName}</div>
+                <div class="pitcher-meta-tag">
+                  Age ${pitcherAge} • Daily Max: ${maxPitches} pitches (${pitchWorkload.pitchesRemaining} left)
+                </div>
                 <div class="pitcher-status-sub">
-                  ${isPitchDanger ? '🚫 Cannot play Catcher rest of game' : isPitchWarning ? '⚠️ Warning: Near 41-pitch catcher limit' : 'Active Pitcher of Record'}
+                  ${isDailyMaxHit ? `🚨 Reached Daily Max (${maxPitches})` :
+                    pitchWorkload.catcherThresholdExceptionApplies ? '⚠️ Catcher Threshold: Eligible if removed this at-bat' :
+                    isPitchDanger ? '🚫 Cannot play Catcher rest of game' :
+                    isPitchWarning ? '⚠️ Warning: Near 41-pitch catcher limit' :
+                    'Active Pitcher of Record'}
                 </div>
               </div>
-              <div class="pitcher-count-badge ${isPitchDanger ? 'danger' : isPitchWarning ? 'warning' : ''}">
+              <div class="pitcher-count-badge ${isDailyMaxHit || isPitchDanger ? 'danger' : isPitchWarning ? 'warning' : ''}">
                 <span class="count-val">${currentPitches}</span>
-                <span class="count-unit">PITCHES</span>
+                <span class="count-unit">/ ${maxPitches} PITCHES</span>
               </div>
             </div>
 
             <div class="pitch-threshold-bar-game">
-              <div class="pitch-fill ${isPitchDanger ? 'danger' : isPitchWarning ? 'warning' : ''}" style="width: ${fillPercent}%;"></div>
+              <div class="pitch-fill ${isDailyMaxHit || isPitchDanger ? 'danger' : isPitchWarning ? 'warning' : ''}" style="width: ${fillPercent}%;"></div>
             </div>
 
             <div class="pitch-markers-game">
               <span>0</span>
-              <span>35</span>
+              <span>${pitcherAge >= 15 ? '30' : '20'}</span>
               <span class="marker-c-cap">41 (C-Cap)</span>
-              <span>50</span>
-              <span>65</span>
-              <span>75</span>
-              <span>85</span>
+              <span>${pitcherAge <= 8 ? '50 (Max)' : '50'}</span>
+              ${pitcherAge > 8 ? `<span>65</span>` : ''}
+              ${pitcherAge > 8 ? `<span>${maxPitches} (Max)</span>` : ''}
             </div>
 
             <div class="pitch-rest-callout">
-              <span class="rest-label">MANDATORY REST:</span>
-              <span class="rest-value">${restDaysText}</span>
+              <div class="rest-row-main">
+                <span class="rest-label">MANDATORY REST:</span>
+                <span class="rest-value">${pitchWorkload.effectiveRestDaysText} (${pitchWorkload.restDays} Calendar Days)</span>
+              </div>
+              <div class="rest-row-sub">
+                <span class="rest-date-icon">📅</span> Next Eligible to Pitch: <strong>${pitchWorkload.formattedNextEligibleDate}</strong>
+              </div>
+              ${pitchWorkload.thresholdExceptionActive ? `
+                <div class="threshold-exception-banner">
+                  ⚡ <strong>Threshold Exception:</strong> Started batter at <strong>${pitchWorkload.thresholdStartPitches}</strong> pitches. If removed after this batter, rest is charged at ${pitchWorkload.thresholdStartPitches} pitches (${pitchWorkload.effectiveRestDaysText})${pitchWorkload.catcherThresholdExceptionApplies ? ' & remains eligible to catch' : ''}!
+                </div>
+              ` : ''}
             </div>
 
             <!-- At-Bat Count Tracker (Balls & Strikes) -->
@@ -1050,6 +1117,9 @@ export class DugoutUI {
               </button>
               <button id="btn-pitch-foul" class="btn btn-secondary btn-sm" ${!pitcherId ? 'disabled' : ''} title="Foul ball (+1 Pitch, adds strike if < 2)">
                 ⚠️ Foul (+1)
+              </button>
+              <button id="btn-pitch-hbp" class="btn btn-secondary btn-sm" ${!pitcherId ? 'disabled' : ''} title="Hit by pitch (+1 Pitch, awards 1B, advances forced runners & batter)">
+                💥 Hit Batter (+1)
               </button>
               <button id="btn-pitch-plus1-game" class="btn btn-secondary btn-sm" ${!pitcherId ? 'disabled' : ''} title="Generic +1 pitch without count change">
                 +1 Generic
@@ -1281,6 +1351,15 @@ export class DugoutUI {
             </div>
             <span class="hub-card-arrow">›</span>
           </button>
+
+          <button class="mobile-hub-card" id="btn-hub-install">
+            <div class="hub-card-icon-wrap" style="background: rgba(249, 115, 22, 0.2); color: #fb923c;">📲</div>
+            <div class="hub-card-text">
+              <strong class="hub-card-title">Install Mobile App</strong>
+              <span class="hub-card-desc">Add Dugout Admin to your phone's Home Screen for offline dugout use</span>
+            </div>
+            <span class="hub-card-arrow">›</span>
+          </button>
         </div>
 
         <div class="mobile-hub-coach-card">
@@ -1453,15 +1532,14 @@ export class DugoutUI {
               <span class="jersey-num">#${player.jerseyNumber}</span>
               <div class="player-details">
                 <div class="player-name-row">
-                  <span class="player-name">${player.name}</span>
+                  <span class="player-name">${player.name}${player.age ? ` <span class="player-age-sub" style="font-size: 0.75rem; color: #94a3b8; font-weight: 500;">(Age ${player.age})</span>` : ''}</span>
                   <button class="btn-status-pill ${player.isOut ? 'pill-absent' : 'pill-present'}" data-player-id="${player.id}" title="Click to toggle Present / Unavailable">
                     ${player.isOut ? (player.outReason || 'Absent') : 'Present'}
                   </button>
                 </div>
                 <div class="player-tags">
-                  ${player.eligiblePositions?.canPitch ? '<span class="tag-badge tag-p">P</span>' : ''}
-                  ${player.eligiblePositions?.canCatch ? '<span class="tag-badge tag-c">C</span>' : ''}
-                  ${player.eligiblePositions?.canPlayFirstBase ? '<span class="tag-badge tag-1b">1B</span>' : ''}
+                  ${(player.canPitch ?? player.eligiblePositions?.canPitch) ? '<span class="tag-badge tag-p">P</span>' : ''}
+                  ${(player.canCatch ?? player.eligiblePositions?.canCatch) ? '<span class="tag-badge tag-c">C</span>' : ''}
                   ${needsInfieldAlert ? '<span class="tag-badge tag-warning">IF Req Inn 4</span>' : ''}
                   ${failedInfieldBy4 ? '<span class="tag-badge tag-danger">No IF in 1-4</span>' : ''}
                 </div>
@@ -1511,9 +1589,8 @@ export class DugoutUI {
                   </button>
                 </div>
                 <div class="player-tags">
-                  ${player.eligiblePositions?.canPitch ? '<span class="tag-badge tag-p">P</span>' : ''}
-                  ${player.eligiblePositions?.canCatch ? '<span class="tag-badge tag-c">C</span>' : ''}
-                  ${player.eligiblePositions?.canPlayFirstBase ? '<span class="tag-badge tag-1b">1B</span>' : ''}
+                  ${(player.canPitch ?? player.eligiblePositions?.canPitch) ? '<span class="tag-badge tag-p">P</span>' : ''}
+                  ${(player.canCatch ?? player.eligiblePositions?.canCatch) ? '<span class="tag-badge tag-c">C</span>' : ''}
                 </div>
               </div>
             </div>
@@ -1634,34 +1711,29 @@ export class DugoutUI {
     }
 
     // --- GAME VIEW SPECIFIC EVENT HANDLERS ---
-    // Bottom Task Bar Switches (Line-Up vs Game Tracker)
+    // Subview Switches (Line-Up vs Game Tracker) - Wired to both top subnav and bottom taskbar
+    const switchSubView = (tabKey) => {
+      this.gameLayoutTab = tabKey;
+      localStorage.setItem('dugout_game_layout_tab', tabKey);
+      this.render({
+        state: this.stateManager.state,
+        validation: this.stateManager.validate(),
+        canUndo: this.stateManager.historyIndex > 0,
+        canRedo: this.stateManager.historyIndex < this.stateManager.history.length - 1,
+      });
+    };
+
     const btnTaskbarLineup = document.getElementById('btn-taskbar-lineup');
-    if (btnTaskbarLineup) {
-      btnTaskbarLineup.onclick = () => {
-        this.gameLayoutTab = 'lineup';
-        localStorage.setItem('dugout_game_layout_tab', 'lineup');
-        this.render({
-          state: this.stateManager.state,
-          validation: this.stateManager.validate(),
-          canUndo: this.stateManager.historyIndex > 0,
-          canRedo: this.stateManager.historyIndex < this.stateManager.history.length - 1,
-        });
-      };
-    }
+    if (btnTaskbarLineup) btnTaskbarLineup.onclick = () => switchSubView('lineup');
+
+    const btnSubnavLineup = document.getElementById('btn-subnav-lineup');
+    if (btnSubnavLineup) btnSubnavLineup.onclick = () => switchSubView('lineup');
 
     const btnTaskbarTracker = document.getElementById('btn-taskbar-tracker');
-    if (btnTaskbarTracker) {
-      btnTaskbarTracker.onclick = () => {
-        this.gameLayoutTab = 'tracker';
-        localStorage.setItem('dugout_game_layout_tab', 'tracker');
-        this.render({
-          state: this.stateManager.state,
-          validation: this.stateManager.validate(),
-          canUndo: this.stateManager.historyIndex > 0,
-          canRedo: this.stateManager.historyIndex < this.stateManager.history.length - 1,
-        });
-      };
-    }
+    if (btnTaskbarTracker) btnTaskbarTracker.onclick = () => switchSubView('tracker');
+
+    const btnSubnavTracker = document.getElementById('btn-subnav-tracker');
+    if (btnSubnavTracker) btnSubnavTracker.onclick = () => switchSubView('tracker');
 
     // --- LINE-UP SUBVIEW EVENT HANDLERS ---
     // Inning pills in Line-Up View
@@ -1814,7 +1886,11 @@ export class DugoutUI {
     document.querySelectorAll('.diamond-base[data-base]').forEach((baseEl) => {
       baseEl.onclick = () => {
         const baseKey = baseEl.getAttribute('data-base');
-        if (!baseKey || baseKey === 'HP') return;
+        if (!baseKey) return;
+        if (baseKey === 'HP') {
+          this.showHomePlateActionsModal(state);
+          return;
+        }
         const runnerId = state.runnersOnBase ? state.runnersOnBase[baseKey] : null;
         if (runnerId) {
           this.showBaseRunnerActionsModal(state, baseKey, runnerId);
@@ -1852,7 +1928,7 @@ export class DugoutUI {
       btnQuickClearBases.onclick = () => this.stateManager.clearAllBaseRunners();
     }
 
-    // Pitch Controls in Game View: Strike, Ball, In Play, Foul, Undo
+    // Pitch Controls in Game View: Strike, Ball, In Play, Foul, Hit Batter, Undo
     const btnPitchStrike = document.getElementById('btn-pitch-strike');
     if (btnPitchStrike) btnPitchStrike.onclick = () => this.stateManager.recordPitchStrike();
 
@@ -1864,6 +1940,9 @@ export class DugoutUI {
 
     const btnPitchFoul = document.getElementById('btn-pitch-foul');
     if (btnPitchFoul) btnPitchFoul.onclick = () => this.stateManager.recordPitchFoul();
+
+    const btnPitchHBP = document.getElementById('btn-pitch-hbp');
+    if (btnPitchHBP) btnPitchHBP.onclick = () => this.stateManager.recordPitchHitBatter();
 
     const btnCountReset = document.getElementById('btn-count-reset');
     if (btnCountReset) btnCountReset.onclick = () => this.stateManager.resetBatterCount();
@@ -2143,6 +2222,9 @@ export class DugoutUI {
     const hubPrint = document.getElementById('btn-hub-print');
     if (hubPrint) hubPrint.onclick = () => window.print();
 
+    const hubInstall = document.getElementById('btn-hub-install');
+    if (hubInstall) hubInstall.onclick = () => this.showInstallAppModal();
+
     const hubSignOut = document.getElementById('btn-hub-signout');
     if (hubSignOut && this.authService) {
       hubSignOut.onclick = async () => {
@@ -2191,6 +2273,74 @@ export class DugoutUI {
   closeModal() {
     const modalContainer = document.getElementById('modal-container');
     if (modalContainer) modalContainer.innerHTML = '';
+  }
+
+  showInstallAppModal() {
+    const isStandalone = window.navigator.standalone === true || window.matchMedia('(display-mode: standalone)').matches;
+    const isIOS = /iPad|iPhone|iPod/.test(navigator.userAgent) && !window.MSStream;
+
+    if (window.deferredPWAInstallPrompt) {
+      window.deferredPWAInstallPrompt.prompt();
+      window.deferredPWAInstallPrompt.userChoice.then((choiceResult) => {
+        if (choiceResult.outcome === 'accepted') {
+          console.log('[PWA] User accepted installation prompt');
+        }
+        window.deferredPWAInstallPrompt = null;
+      });
+      return;
+    }
+
+    const bodyHtml = `
+      <div style="display: flex; flex-direction: column; align-items: center; text-align: center; gap: 14px;">
+        <img src="icon.jpeg" alt="Dugout Admin" style="width: 80px; height: 80px; border-radius: 18px; box-shadow: 0 8px 24px rgba(0,0,0,0.5); border: 2px solid rgba(255,255,255,0.15);" />
+        
+        <div>
+          <h4 style="color: #fff; font-family: var(--font-brand); font-size: 1.15rem; margin: 0 0 4px 0;">Dugout Admin Mobile App</h4>
+          <span style="font-size: 0.8rem; color: #38bdf8; font-weight: 700;">Offline-Ready Progressive Web App (PWA)</span>
+        </div>
+
+        ${isStandalone ? `
+          <div style="background: rgba(34, 197, 94, 0.15); border: 1px solid #22c55e; border-radius: 10px; padding: 12px; width: 100%;">
+            <strong style="color: #4ade80; display: block; font-size: 0.95rem;">✅ App Already Installed!</strong>
+            <span style="font-size: 0.8rem; color: #cbd5e1;">You are running in standalone full-screen mode on your mobile device.</span>
+          </div>
+        ` : isIOS ? `
+          <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px; text-align: left; width: 100%; display: flex; flex-direction: column; gap: 10px;">
+            <strong style="color: #f8fafc; font-size: 0.88rem;">To install on iPhone or iPad (Safari):</strong>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: #cbd5e1;">
+              <span style="font-size: 1.1rem; background: rgba(56, 189, 248, 0.2); padding: 4px 8px; border-radius: 6px;">1️⃣</span>
+              <span>Tap the <strong>Share</strong> button (square with arrow ⎙/⎋) at the bottom of Safari.</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: #cbd5e1;">
+              <span style="font-size: 1.1rem; background: rgba(56, 189, 248, 0.2); padding: 4px 8px; border-radius: 6px;">2️⃣</span>
+              <span>Scroll down and tap <strong>"Add to Home Screen"</strong> (➕).</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: #cbd5e1;">
+              <span style="font-size: 1.1rem; background: rgba(56, 189, 248, 0.2); padding: 4px 8px; border-radius: 6px;">3️⃣</span>
+              <span>Tap <strong>"Add"</strong> in the top-right corner to finish.</span>
+            </div>
+          </div>
+        ` : `
+          <div style="background: rgba(30, 41, 59, 0.7); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 12px; padding: 14px; text-align: left; width: 100%; display: flex; flex-direction: column; gap: 10px;">
+            <strong style="color: #f8fafc; font-size: 0.88rem;">To install on Android or Chrome:</strong>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: #cbd5e1;">
+              <span style="font-size: 1.1rem; background: rgba(56, 189, 248, 0.2); padding: 4px 8px; border-radius: 6px;">1️⃣</span>
+              <span>Tap the browser menu (<strong>⋮</strong> three dots in top-right).</span>
+            </div>
+            <div style="display: flex; align-items: center; gap: 10px; font-size: 0.82rem; color: #cbd5e1;">
+              <span style="font-size: 1.1rem; background: rgba(56, 189, 248, 0.2); padding: 4px 8px; border-radius: 6px;">2️⃣</span>
+              <span>Tap <strong>"Install app"</strong> or <strong>"Add to Home screen"</strong>.</span>
+            </div>
+          </div>
+        `}
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-primary" onclick="document.getElementById('modal-container').innerHTML=''" style="width: 100%; font-weight: 700;">Got It</button>
+    `;
+
+    this.showModal('📲 Install Dugout Admin App', bodyHtml, footerHtml);
   }
 
   showLateArrivalModal(state) {
@@ -2644,19 +2794,22 @@ export class DugoutUI {
         const hitType = btn.getAttribute('data-hit');
         this.closeModal();
         this.stateManager.recordPitches(1);
-        this.stateManager.resetBatterCount();
-
-        if (hitType === '1B' || hitType === 'FC') {
-          if (curBatterId) this.stateManager.setBaseRunner('1B', curBatterId);
-        } else if (hitType === '2B') {
-          if (curBatterId) this.stateManager.setBaseRunner('2B', curBatterId);
-        } else if (hitType === '3B') {
-          if (curBatterId) this.stateManager.setBaseRunner('3B', curBatterId);
-        } else if (hitType === 'HR') {
-          const teamKey = isMyTeamBatting ? (state.isHomeTeam ? 'home' : 'opponent') : (state.isHomeTeam ? 'opponent' : 'home');
-          this.stateManager.recordRun(teamKey, 1);
+        if (typeof this.stateManager?.recordSafeHit === 'function') {
+          this.stateManager.recordSafeHit(hitType);
+        } else {
+          this.stateManager.resetBatterCount();
+          if (hitType === '1B' || hitType === 'FC') {
+            if (curBatterId) this.stateManager.setBaseRunner('1B', curBatterId);
+          } else if (hitType === '2B') {
+            if (curBatterId) this.stateManager.setBaseRunner('2B', curBatterId);
+          } else if (hitType === '3B') {
+            if (curBatterId) this.stateManager.setBaseRunner('3B', curBatterId);
+          } else if (hitType === 'HR') {
+            const teamKey = isMyTeamBatting ? (state.isHomeTeam ? 'home' : 'opponent') : (state.isHomeTeam ? 'opponent' : 'home');
+            this.stateManager.recordRun(teamKey, 1);
+          }
+          this.stateManager.advanceBatter(1);
         }
-        this.stateManager.advanceBatter(1);
       };
     });
 
@@ -2665,6 +2818,149 @@ export class DugoutUI {
       this.closeModal();
       this.stateManager.recordPitchInPlay();
     };
+  }
+
+  showHomePlateActionsModal(state) {
+    const battingContext = (typeof this.stateManager?.getBattingContext === 'function')
+      ? this.stateManager.getBattingContext()
+      : getBattingContextFromState(state);
+    const { isMyTeamBatting, battingTeamName } = battingContext;
+    const teamKey = isMyTeamBatting ? (state.isHomeTeam ? 'home' : 'opponent') : (state.isHomeTeam ? 'opponent' : 'home');
+
+    const runners = state.runnersOnBase || { '1B': null, '2B': null, '3B': null };
+    const players = isMyTeamBatting
+      ? state.players
+      : ((typeof this.stateManager?.getOpponentPlayers === 'function') ? this.stateManager.getOpponentPlayers() : getFallbackOpponentRoster(state));
+
+    const runner3B = runners['3B'] ? (players.find((p) => p.id === runners['3B']) || state.players.find((p) => p.id === runners['3B'])) : null;
+    const runner2B = runners['2B'] ? (players.find((p) => p.id === runners['2B']) || state.players.find((p) => p.id === runners['2B'])) : null;
+    const runner1B = runners['1B'] ? (players.find((p) => p.id === runners['1B']) || state.players.find((p) => p.id === runners['1B'])) : null;
+
+    const bodyHtml = `
+      <div style="display: flex; flex-direction: column; gap: 14px;">
+        <div style="background: rgba(37, 99, 235, 0.15); border: 1px solid rgba(96, 165, 250, 0.4); border-radius: 10px; padding: 12px; display: flex; align-items: center; gap: 10px;">
+          <span style="font-size: 1.6rem;">🏠</span>
+          <div>
+            <strong style="color: #60a5fa; font-size: 1rem; display: block;">Home Plate (HP) Actions</strong>
+            <span style="font-size: 0.8rem; color: #cbd5e1;">Offense: <strong>${battingTeamName}</strong></span>
+          </div>
+        </div>
+
+        <!-- 1. Score Runners at Home -->
+        ${(runner3B || runner2B || runner1B) ? `
+          <div style="background: rgba(16, 185, 129, 0.12); border: 1px solid rgba(16, 185, 129, 0.3); border-radius: 10px; padding: 12px; display: flex; flex-direction: column; gap: 8px;">
+            <strong style="color: #34d399; font-size: 0.86rem; display: block;">
+              🏃 Score Base Runner at Home Plate (+1 Run):
+            </strong>
+            ${runner3B ? `
+              <button type="button" id="btn-score-runner-3b" class="btn btn-success" style="justify-content: flex-start; text-align: left; padding: 10px 14px; font-weight: 700;">
+                <span style="font-size: 1.2rem;">⚡</span>
+                <div>
+                  <strong style="display: block; font-size: 0.92rem;">Score ${runner3B.name} (#${runner3B.jerseyNumber}) from 3B</strong>
+                  <span style="font-size: 0.74rem; color: #d1fae5;">Advances 3B ➔ HP, adds +1 run to ${battingTeamName}</span>
+                </div>
+              </button>
+            ` : ''}
+            ${runner2B ? `
+              <button type="button" id="btn-score-runner-2b" class="btn btn-secondary" style="justify-content: flex-start; text-align: left; padding: 10px 14px; font-weight: 700;">
+                <span style="font-size: 1.2rem;">🏃</span>
+                <div>
+                  <strong style="display: block; font-size: 0.92rem;">Score ${runner2B.name} (#${runner2B.jerseyNumber}) from 2B</strong>
+                  <span style="font-size: 0.74rem; color: #cbd5e1;">Advances 2B ➔ HP, adds +1 run to ${battingTeamName}</span>
+                </div>
+              </button>
+            ` : ''}
+            ${runner1B ? `
+              <button type="button" id="btn-score-runner-1b" class="btn btn-secondary" style="justify-content: flex-start; text-align: left; padding: 10px 14px; font-weight: 700;">
+                <span style="font-size: 1.2rem;">🏃</span>
+                <div>
+                  <strong style="display: block; font-size: 0.92rem;">Score ${runner1B.name} (#${runner1B.jerseyNumber}) from 1B</strong>
+                  <span style="font-size: 0.74rem; color: #cbd5e1;">Advances 1B ➔ HP, adds +1 run to ${battingTeamName}</span>
+                </div>
+              </button>
+            ` : ''}
+          </div>
+        ` : ''}
+
+        <!-- 2. Direct Add Run -->
+        <button type="button" id="btn-hp-direct-run" class="btn btn-primary" style="display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 10px 14px; text-align: left;">
+          <span style="font-size: 1.3rem;">➕</span>
+          <div>
+            <strong style="display: block; font-size: 0.92rem;">Add +1 Run to Scoreboard</strong>
+            <span style="font-size: 0.74rem; color: #bfdbfe;">Record run for ${battingTeamName} without clearing specific base</span>
+          </div>
+        </button>
+
+        <!-- 3. Record Out at Home -->
+        <button type="button" id="btn-hp-record-out" class="btn btn-danger" style="display: flex; align-items: center; justify-content: flex-start; gap: 10px; padding: 10px 14px; text-align: left;">
+          <span style="font-size: 1.3rem;">🛑</span>
+          <div>
+            <strong style="display: block; font-size: 0.92rem;">Record Out at Home (HP)</strong>
+            <span style="font-size: 0.74rem; color: #fca5a5;">Runner tagged or forced out trying to score</span>
+          </div>
+        </button>
+      </div>
+    `;
+
+    const footerHtml = `
+      <button class="btn btn-secondary" onclick="document.getElementById('modal-container').innerHTML=''">Cancel</button>
+    `;
+
+    this.showModal('🏠 Home Plate & Scoreboard Actions', bodyHtml, footerHtml);
+
+    if (runner3B) {
+      const btn3B = document.getElementById('btn-score-runner-3b');
+      if (btn3B) {
+        btn3B.onclick = () => {
+          this.closeModal();
+          this.stateManager.advanceRunner('3B', 'HP');
+        };
+      }
+    }
+
+    if (runner2B) {
+      const btn2B = document.getElementById('btn-score-runner-2b');
+      if (btn2B) {
+        btn2B.onclick = () => {
+          this.closeModal();
+          this.stateManager.advanceRunner('2B', 'HP');
+        };
+      }
+    }
+
+    if (runner1B) {
+      const btn1B = document.getElementById('btn-score-runner-1b');
+      if (btn1B) {
+        btn1B.onclick = () => {
+          this.closeModal();
+          this.stateManager.advanceRunner('1B', 'HP');
+        };
+      }
+    }
+
+    const btnDirectRun = document.getElementById('btn-hp-direct-run');
+    if (btnDirectRun) {
+      btnDirectRun.onclick = () => {
+        this.closeModal();
+        this.stateManager.recordRun(teamKey, 1);
+      };
+    }
+
+    const btnHpOut = document.getElementById('btn-hp-record-out');
+    if (btnHpOut) {
+      btnHpOut.onclick = () => {
+        this.closeModal();
+        const candidateRunner = runner3B || runner2B || runner1B;
+        this.showRecordOutModal(state, {
+          playerId: candidateRunner ? candidateRunner.id : null,
+          playerName: candidateRunner ? `${candidateRunner.name} (#${candidateRunner.jerseyNumber})` : null,
+          base: 'HP',
+          outType: 'tag_out',
+          clearRunnerBase: runner3B ? '3B' : (runner2B ? '2B' : (runner1B ? '1B' : null)),
+          advanceBatter: false,
+        });
+      };
+    }
   }
 
   showBaseRunnerActionsModal(state, baseKey, runnerId) {
@@ -3007,11 +3303,10 @@ export class DugoutUI {
                   <span class="batting-slot-num" style="min-width: 28px; text-align: center;">${idx + 1}</span>
                   <span class="jersey-num">#${player.jerseyNumber}</span>
                   <div class="item-player-info">
-                    <strong style="color: #fff;">${player.name}</strong>
+                    <strong style="color: #fff;">${player.name}${player.age ? ` <span style="font-size: 0.75rem; color: #94a3b8; font-weight: 500; margin-left: 4px;">(Age ${player.age})</span>` : ''}</strong>
                     <div class="item-tags">
-                      ${player.eligiblePositions?.canPitch ? '<span class="tag-badge tag-p">P</span>' : ''}
-                      ${player.eligiblePositions?.canCatch ? '<span class="tag-badge tag-c">C</span>' : ''}
-                      ${player.eligiblePositions?.canPlayFirstBase ? '<span class="tag-badge tag-1b">1B</span>' : ''}
+                      ${(player.canPitch ?? player.eligiblePositions?.canPitch) ? '<span class="tag-badge tag-p">P</span>' : ''}
+                      ${(player.canCatch ?? player.eligiblePositions?.canCatch) ? '<span class="tag-badge tag-c">C</span>' : ''}
                     </div>
                   </div>
                 </div>

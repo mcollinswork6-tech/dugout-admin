@@ -18,7 +18,10 @@
 import { authService } from './auth.js';
 import { SAMPLE_TEAMS } from './sample-data.js';
 import { calculatePlayerStats } from './rules.js';
+import { normalizePlayer } from './state.js';
 import { LEAGUE_CONFIG, getDesignatedManagerConfig, isSuperAdmin, SUPER_ADMIN_EMAILS } from './constants.js';
+
+export { normalizePlayer };
 
 const LOCAL_STORAGE_PREFIX = 'nnll_firestore_';
 const TEAMS_COLLECTION = 'teams';
@@ -555,7 +558,12 @@ class TeamStorageService {
   async getTeam(teamId) {
     const resolvedId = (teamId === 'nnll-black-bats') ? 'team-black-bats-6589' : teamId;
     const data = await this.getDocData(`${TEAMS_COLLECTION}/${resolvedId}`);
-    if (data) return data;
+    if (data) {
+      if (Array.isArray(data.roster)) {
+        data.roster = data.roster.map(normalizePlayer);
+      }
+      return data;
+    }
 
     // Check sample teams fallback
     const sample = SAMPLE_TEAMS.find((t) => t.teamId === resolvedId || (resolvedId === 'team-black-bats-6589' && (t.teamId === 'team-black-bats-6589' || t.teamName.toLowerCase() === 'black bats')));
@@ -570,7 +578,7 @@ class TeamStorageService {
         playerCount: sample.players.length,
         adminUid: null,
         adminEmail: sample.adminEmail || null,
-        roster: sample.players,
+        roster: sample.players.map(normalizePlayer),
         stats: { totalGamesPlayed: 0, playerStats: {}, recentGames: [] },
         games: {}
       };
@@ -709,7 +717,7 @@ class TeamStorageService {
 
   async getTeamRoster(teamId) {
     const team = await this.getTeam(teamId);
-    return team && Array.isArray(team.roster) ? team.roster : [];
+    return team && Array.isArray(team.roster) ? team.roster.map(normalizePlayer) : [];
   }
 
   async saveTeamRoster(teamId, players) {
@@ -719,13 +727,14 @@ class TeamStorageService {
     }
 
     const team = (await this.getTeam(teamId)) || { teamId, roster: [] };
-    team.roster = players;
-    team.playerCount = players.length;
+    const normalized = (players || []).map(normalizePlayer);
+    team.roster = normalized;
+    team.playerCount = normalized.length;
     team.updatedAt = new Date().toISOString();
 
     await this.setDocData(`${TEAMS_COLLECTION}/${teamId}`, team);
-    await this.updateTeamProfile(teamId, { playerCount: players.length });
-    return players;
+    await this.updateTeamProfile(teamId, { playerCount: normalized.length });
+    return normalized;
   }
 
   async addPlayerToRoster(teamId, player) {
@@ -735,18 +744,9 @@ class TeamStorageService {
     }
 
     const team = (await this.getTeam(teamId)) || { teamId, roster: [], stats: { playerStats: {} } };
-    const players = team.roster || [];
+    const players = (team.roster || []).map(normalizePlayer);
 
-    const newPlayer = {
-      id: player.id || `p_${Date.now()}`,
-      name: player.name.trim(),
-      jerseyNumber: parseInt(player.jerseyNumber, 10) || 0,
-      eligiblePositions: {
-        canPitch: !!player.eligiblePositions?.canPitch,
-        canCatch: !!player.eligiblePositions?.canCatch,
-        canPlayFirstBase: !!player.eligiblePositions?.canPlayFirstBase,
-      }
-    };
+    const newPlayer = normalizePlayer(player);
 
     players.push(newPlayer);
     team.roster = players;
@@ -759,6 +759,10 @@ class TeamStorageService {
         playerId: newPlayer.id,
         name: newPlayer.name,
         jerseyNumber: newPlayer.jerseyNumber,
+        jersey: newPlayer.jersey,
+        firstName: newPlayer.firstName,
+        lastName: newPlayer.lastName,
+        age: newPlayer.age,
         gamesPlayed: 0,
         inningsInfield: 0,
         inningsOutfield: 0,
@@ -788,23 +792,45 @@ class TeamStorageService {
     const idx = team.roster.findIndex((p) => p.id === playerId);
     if (idx === -1) return null;
 
-    team.roster[idx] = {
-      ...team.roster[idx],
+    const existing = normalizePlayer(team.roster[idx]);
+    const merged = {
+      ...existing,
       ...updates,
       eligiblePositions: {
-        ...team.roster[idx].eligiblePositions,
+        ...existing.eligiblePositions,
         ...(updates.eligiblePositions || {})
       }
     };
+    if (updates.jersey !== undefined) {
+      merged.jersey = updates.jersey;
+      merged.jerseyNumber = updates.jersey;
+    }
+    if (updates.jerseyNumber !== undefined) {
+      merged.jersey = updates.jerseyNumber;
+      merged.jerseyNumber = updates.jerseyNumber;
+    }
+    if (updates.firstName !== undefined) merged.firstName = updates.firstName;
+    if (updates.lastName !== undefined) merged.lastName = updates.lastName;
+    if (updates.age !== undefined) merged.age = updates.age;
+    if (updates.canPitch !== undefined) merged.canPitch = updates.canPitch;
+    if (updates.canCatch !== undefined) merged.canCatch = updates.canCatch;
+
+    const updatedPlayer = normalizePlayer(merged);
+
+    team.roster[idx] = updatedPlayer;
 
     // Update stats name/jersey
     if (team.stats?.playerStats?.[playerId]) {
-      if (updates.name) team.stats.playerStats[playerId].name = updates.name;
-      if (updates.jerseyNumber !== undefined) team.stats.playerStats[playerId].jerseyNumber = updates.jerseyNumber;
+      team.stats.playerStats[playerId].name = updatedPlayer.name;
+      team.stats.playerStats[playerId].jerseyNumber = updatedPlayer.jerseyNumber;
+      team.stats.playerStats[playerId].jersey = updatedPlayer.jersey;
+      team.stats.playerStats[playerId].firstName = updatedPlayer.firstName;
+      team.stats.playerStats[playerId].lastName = updatedPlayer.lastName;
+      if (updatedPlayer.age !== undefined) team.stats.playerStats[playerId].age = updatedPlayer.age;
     }
 
     await this.setDocData(`${TEAMS_COLLECTION}/${teamId}`, team);
-    return team.roster[idx];
+    return updatedPlayer;
   }
 
   async removePlayerFromRoster(teamId, playerId) {

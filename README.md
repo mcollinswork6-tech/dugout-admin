@@ -16,7 +16,7 @@ An offline-first dugout management web application designed to automate defensiv
   - **41+ Pitch Cap**: Any pitcher delivering 41 or more pitches is ineligible to catch for the remainder of that game.
   - **4-Inning Catcher Cap**: Any player who catches 4 or more innings cannot pitch on that calendar day.
   - **Mound Removal**: Once removed from the mound, a player cannot return to pitch in that game.
-- **Safety Tags**: Respects player tags (`canPitch`, `canCatch`, `canPlayFirstBase`).
+- **Safety Tags**: Respects player tags (`canPitch`, `canCatch`).
 
 ### 2. Algorithmic Backtracking CSP Solver & Dynamic Re-Solver
 - Solves an optimal 6-inning defensive matrix satisfying all hard constraints while equalizing bench time and infield/outfield balance.
@@ -70,7 +70,7 @@ Firestore:
 ├── Collection: teams
 │   └── Document: {teamId}
 │         ├── profile:  { teamName, division, season, headCoach, opponentName }
-│         ├── roster:   [ player profiles & safety tags (canPitch, canCatch, canPlayFirstBase) ]
+│         ├── roster:   [ player profiles & safety tags (jersey, firstName, lastName, canPitch, canCatch) ]
 │         ├── stats:    { cumulative innings, pitches, violations }
 │         └── games:    { archived game snapshots & rotation matrices }
 └── Collection: app_settings
@@ -80,7 +80,7 @@ Firestore:
 ### Features:
 - **100% Pure Firebase**: Communicates natively from web browsers without any Google Cloud CORS preflight errors.
 - **Team Switching & Management**: Click **"👥 Teams & Stats"** in the header to switch teams or create new teams.
-- **Roster & Safety Tag Editor**: Add players, assign jersey numbers, and toggle safety eligibility (`canPitch`, `canCatch`, `canPlayFirstBase`).
+- **Roster & Safety Tag Editor**: Add players, edit active roster tuples, assign jersey numbers, and toggle safety eligibility (`canPitch`, `canCatch`).
 - **Cumulative Season Tracking**: Automatically aggregates player stats across games (Infield, Outfield, Bench innings, Pitches thrown, Infield-by-4 compliance).
 - **Zero-Network Dugout Reliability**: Transparently mirrors all data to LocalStorage so coaches on the field have uninterrupted access even without internet.
 
